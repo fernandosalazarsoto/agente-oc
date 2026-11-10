@@ -34,7 +34,7 @@ describe('Controles de costo', () => {
 describe('Configuración', () => {
   it('aplica valores por defecto y trata vacíos como no definidos', () => {
     const c = leerConfig({ ANTHROPIC_API_KEY: '', NODE_ENV: 'test' } as NodeJS.ProcessEnv);
-    expect(c.AGENT_MODEL).toBe('claude-haiku-5-5');
+    expect(c.AGENT_MODEL).toBe('claude-sonnet-5-5');
     expect(c.ANTHROPIC_API_KEY).toBeUndefined();
   });
 

@@ -76,7 +76,7 @@ Navegador (chat)                     Servidor (Next.js, Node 20+)
 | Riesgo | Control implementado |
 |--------|----------------------|
 | Exposición de la API key | Solo en variables de entorno del servidor; nunca en cliente, repo ni logs |
-| Uso no autorizado / consumo | Basic Auth (`proxy.ts`), 10 peticiones por minuto por IP y 120 por hora por instancia, historial recortado a 12 mensajes, tope de pasos y tokens, Haiku por defecto, límite de gasto en el workspace de la API |
+| Uso no autorizado / consumo | Basic Auth (`proxy.ts`), 10 peticiones por minuto por IP y 120 por hora por instancia, historial recortado a 12 mensajes, tope de pasos y tokens, límite de gasto en el workspace de la API |
 | Creación de OC sin consentimiento | `toolApproval` en servidor + firma HMAC de aprobaciones (`TOOL_APPROVAL_SECRET`); aprobaciones forjadas se rechazan (test) |
 | Prompt injection en documentos | Contenido tratado como dato; la OC solo recibe `casoId` y se construye desde datos validados en servidor (test con ej-002) |
 | Path traversal | Ids de caso y dataset validados con patrón estricto; raíz `fixtures/` literal |
