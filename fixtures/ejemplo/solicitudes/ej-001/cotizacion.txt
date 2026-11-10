@@ -1,0 +1,6 @@
+COTIZACIÓN N° 0001
+Proveedor: Proveedor Ejemplo Activo SAS
+NIT: 900.000.001-1
+Subtotal: $ 1.000.000
+IVA 19%: $ 190.000
+Total: $ 1.190.000
