@@ -2,12 +2,16 @@ import { createAgentUIStreamResponse } from 'ai';
 import { z } from 'zod';
 import { crearAgenteDesdeEntorno } from '@/src/agent/runtime';
 import { diagnosticoConfig, leerConfig } from '@/src/config';
+import { recortarHistorial } from '@/src/lib/historial';
 import { LimitePeticiones } from '@/src/lib/limite-peticiones';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const limite = new LimitePeticiones(30, 60_000);
+// Controles de consumo de la API del LLM (por instancia del servidor).
+const limitePorIp = new LimitePeticiones(10, 60_000);
+const limiteGlobal = new LimitePeticiones(120, 60 * 60_000);
+const MAX_MENSAJES_AL_MODELO = 12;
 
 // Validación superficial del cuerpo: el SDK revalida la estructura de los mensajes.
 const esquemaCuerpo = z.object({
@@ -22,7 +26,8 @@ function json(status: number, error: string) {
 
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
-  if (!limite.permitir(ip)) return json(429, 'Demasiadas solicitudes. Intente en un minuto.');
+  if (!limitePorIp.permitir(ip)) return json(429, 'Demasiadas solicitudes. Intente en un minuto.');
+  if (!limiteGlobal.permitir('global')) return json(429, 'Capacidad horaria agotada. Intente más tarde.');
 
   const config = leerConfig();
   const problemas = diagnosticoConfig(config);
@@ -43,7 +48,13 @@ export async function POST(req: Request) {
 
   return createAgentUIStreamResponse({
     agent: crearAgenteDesdeEntorno(config),
-    uiMessages: cuerpo.messages,
+    uiMessages: recortarHistorial(cuerpo.messages, MAX_MENSAJES_AL_MODELO),
+    // Registro de consumo por paso (solo conteos, sin contenido) para vigilar el gasto.
+    onStepEnd: ({ usage }) => {
+      console.info(
+        `[chat] modelo=${config.AGENT_MODEL} tokens_entrada=${usage.inputTokens ?? 0} tokens_salida=${usage.outputTokens ?? 0}`,
+      );
+    },
     // No se exponen detalles internos ni del proveedor al cliente.
     onError: (error) => {
       console.error('[chat] Error del agente:', error);

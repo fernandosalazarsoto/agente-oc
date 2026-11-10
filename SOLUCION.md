@@ -55,7 +55,7 @@ Navegador (chat)                     Servidor (Next.js, Node 20+)
 5. La UI muestra la tarjeta de confirmación. El usuario aprueba o rechaza.
 6. En la siguiente petición el servidor verifica la firma; si es válida y aprobada, ejecuta la herramienta.
 7. La herramienta **revalida el caso** y crea la OC solo si sigue siendo apta. El número de OC es idempotente por caso.
-8. El modelo informa el resultado. Límite de 12 pasos por turno.
+8. El modelo informa el resultado. Límite de 6 pasos y 800 tokens de salida por paso.
 
 ## 4. Matriz de controles
 
@@ -76,7 +76,7 @@ Navegador (chat)                     Servidor (Next.js, Node 20+)
 | Riesgo | Control implementado |
 |--------|----------------------|
 | Exposición de la API key | Solo en variables de entorno del servidor; nunca en cliente, repo ni logs |
-| Uso no autorizado / consumo | Basic Auth opcional (`proxy.ts`), límite de peticiones por IP, tamaño máximo de cuerpo, tope de pasos y tokens |
+| Uso no autorizado / consumo | Basic Auth (`proxy.ts`), 10 peticiones por minuto por IP y 120 por hora por instancia, historial recortado a 12 mensajes, tope de pasos y tokens, Haiku por defecto, límite de gasto en el workspace de la API |
 | Creación de OC sin consentimiento | `toolApproval` en servidor + firma HMAC de aprobaciones (`TOOL_APPROVAL_SECRET`); aprobaciones forjadas se rechazan (test) |
 | Prompt injection en documentos | Contenido tratado como dato; la OC solo recibe `casoId` y se construye desde datos validados en servidor (test con ej-002) |
 | Path traversal | Ids de caso y dataset validados con patrón estricto; raíz `fixtures/` literal |

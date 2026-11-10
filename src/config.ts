@@ -6,7 +6,8 @@ import { z } from 'zod';
  */
 const esquemaConfig = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  AGENT_MODEL: z.string().min(1).default('claude-sonnet-5-5'),
+  // Haiku por defecto: el agente solo orquesta herramientas deterministas.
+  AGENT_MODEL: z.string().min(1).default('claude-haiku-5-5'),
   TOOL_APPROVAL_SECRET: z.string().min(32).optional(),
   DATASET: z.string().min(1).default('ejemplo'),
   APP_ACCESS_USER: z.string().min(1).default('evaluador'),

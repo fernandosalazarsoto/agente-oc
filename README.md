@@ -35,7 +35,7 @@ Para otro set de datos: `DATASET=reto-03 npm run demo` (carpeta `fixtures/reto-0
 |----------|-------------|-------------|
 | `ANTHROPIC_API_KEY` | Sí (chat) | Clave del proveedor LLM. Solo servidor |
 | `TOOL_APPROVAL_SECRET` | Sí en producción | Secreto HMAC (≥ 32 caracteres) para firmar aprobaciones. `openssl rand -base64 32` |
-| `AGENT_MODEL` | No | Modelo del agente. Por defecto `claude-sonnet-5-5` |
+| `AGENT_MODEL` | No | Modelo del agente. Por defecto `claude-haiku-5-5` (mínimo costo); alternativa `claude-sonnet-5-5` |
 | `DATASET` | No | Set de datos dentro de `fixtures/`. Por defecto `ejemplo` |
 | `APP_ACCESS_PASSWORD` | No | Si se define, la URL exige Basic Auth |
 | `APP_ACCESS_USER` | No | Usuario de Basic Auth. Por defecto `evaluador` |
