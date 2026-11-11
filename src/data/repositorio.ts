@@ -1,52 +1,30 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { type ArchivosCaso, type Maestros, parsearMaestros } from '../domain/paquete';
 
 /**
- * Acceso de solo lectura a maestros y casos. Estructura conocida del reto:
- *   fixtures/<dataset>/maestros/{proveedores,centros-costo,indicadores-iva,condiciones-pago}.json
- *   fixtures/<dataset>/solicitudes/<casoId>/{correo.json,solicitud.json,cotizacion.txt,aprobacion.json,factura.txt?}
- *
- * La raíz "fixtures" es literal: limita el acceso a disco a esa carpeta y permite
- * que el bundler incluya solo esos archivos en el despliegue.
- *
- * Reglas de aislamiento: cada llamada lee SOLO la carpeta del caso pedido.
- * No hay caché ni estado entre casos. El contenido de los archivos es dato no confiable.
+ * Acceso de solo lectura a fixtures/<dataset>/ (PRD §7.1), resuelto desde la raíz
+ * del proyecto (ctx.directory). Cada lectura toca SOLO la carpeta del caso pedido
+ * y los maestros: sin caché ni estado entre casos. Protegido contra path traversal.
  */
 
-const PATRON_CASO = /^[a-z0-9][a-z0-9-]{0,39}$/i;
+const PATRON_ID = /^[a-z0-9][a-z0-9-]{0,39}$/i;
 
 export class ErrorDatos extends Error {
-  constructor(
-    message: string,
-    readonly codigo: 'CASO_INVALIDO' | 'CASO_NO_ENCONTRADO' | 'ARCHIVO_FALTANTE' | 'JSON_INVALIDO',
-  ) {
+  constructor(message: string) {
     super(message);
     this.name = 'ErrorDatos';
   }
 }
 
-export interface CasoCrudo {
-  id: string;
-  correo: unknown;
-  solicitud: unknown;
-  cotizacion: string;
-  aprobacion: unknown;
-  /** Solo existe en algunos casos (compras retroactivas). */
-  factura?: string;
+export function directorioDataset(raiz: string, dataset: string): string {
+  if (!PATRON_ID.test(dataset)) throw new ErrorDatos(`Nombre de dataset inválido: "${dataset}"`);
+  return path.join(raiz, 'fixtures', dataset);
 }
 
-export interface MaestrosCrudos {
-  proveedores: unknown;
-  centrosCosto: unknown;
-  indicadoresIva: unknown;
-  condicionesPago: unknown;
-}
-
-export function directorioBase(dataset: string): string {
-  if (!PATRON_CASO.test(dataset)) {
-    throw new ErrorDatos(`Nombre de dataset inválido: "${dataset}"`, 'CASO_INVALIDO');
-  }
-  return path.join(process.cwd(), 'fixtures', dataset);
+export function validarIdCaso(caso: string): string {
+  if (!PATRON_ID.test(caso)) throw new ErrorDatos(`Identificador de caso inválido: "${caso}"`);
+  return caso;
 }
 
 async function existe(ruta: string): Promise<boolean> {
@@ -58,77 +36,48 @@ async function existe(ruta: string): Promise<boolean> {
   }
 }
 
-async function leerJson(ruta: string, requerido: true): Promise<unknown>;
-async function leerJson(ruta: string, requerido: false): Promise<unknown | undefined>;
-async function leerJson(ruta: string, requerido: boolean): Promise<unknown | undefined> {
-  if (!(await existe(ruta))) {
-    if (requerido) throw new ErrorDatos(`Falta el archivo ${path.basename(ruta)}`, 'ARCHIVO_FALTANTE');
-    return undefined;
-  }
+async function leerJson(ruta: string): Promise<unknown | null> {
+  if (!(await existe(ruta))) return null;
   const texto = await readFile(ruta, 'utf8');
   try {
-    return JSON.parse(texto);
+    return JSON.parse(texto) as unknown;
   } catch {
-    throw new ErrorDatos(`JSON inválido en ${path.basename(ruta)}`, 'JSON_INVALIDO');
+    throw new ErrorDatos(`${path.basename(ruta)} no es un JSON válido (archivo malformado): pida al solicitante reenviarlo`);
   }
 }
 
-async function leerTexto(ruta: string, requerido: boolean): Promise<string | undefined> {
-  if (!(await existe(ruta))) {
-    if (requerido) throw new ErrorDatos(`Falta el archivo ${path.basename(ruta)}`, 'ARCHIVO_FALTANTE');
-    return undefined;
-  }
-  return readFile(ruta, 'utf8');
+async function leerTexto(ruta: string): Promise<string | null> {
+  return (await existe(ruta)) ? readFile(ruta, 'utf8') : null;
 }
 
-/** Valida el id antes de tocar el disco (evita path traversal como "../../etc"). */
-export function validarIdCaso(casoId: string): string {
-  if (!PATRON_CASO.test(casoId)) {
-    throw new ErrorDatos(`Identificador de caso inválido: "${casoId}"`, 'CASO_INVALIDO');
-  }
-  return casoId;
-}
-
-export async function listarCasos(dataset: string): Promise<string[]> {
-  const dir = path.join(directorioBase(dataset), 'solicitudes');
+export async function listarCasos(raiz: string, dataset: string): Promise<string[]> {
+  const dir = path.join(directorioDataset(raiz, dataset), 'solicitudes');
   if (!(await existe(dir))) return [];
   const entradas = await readdir(dir, { withFileTypes: true });
-  return entradas
-    .filter((e) => e.isDirectory() && PATRON_CASO.test(e.name))
-    .map((e) => e.name)
-    .sort();
+  return entradas.filter((e) => e.isDirectory() && PATRON_ID.test(e.name)).map((e) => e.name).sort();
 }
 
-export async function cargarCaso(dataset: string, casoId: string): Promise<CasoCrudo> {
-  validarIdCaso(casoId);
-  const dir = path.join(directorioBase(dataset), 'solicitudes', casoId);
-  if (!(await existe(dir))) {
-    throw new ErrorDatos(`No existe el caso "${casoId}"`, 'CASO_NO_ENCONTRADO');
-  }
+export async function leerArchivosCaso(raiz: string, dataset: string, caso: string): Promise<ArchivosCaso> {
+  validarIdCaso(caso);
+  const dir = path.join(directorioDataset(raiz, dataset), 'solicitudes', caso);
+  if (!(await existe(dir))) throw new ErrorDatos(`No existe el caso "${caso}" en fixtures/${dataset}/solicitudes/`);
   const [correo, solicitud, cotizacion, aprobacion, factura] = await Promise.all([
-    leerJson(path.join(dir, 'correo.json'), true),
-    leerJson(path.join(dir, 'solicitud.json'), true),
-    leerTexto(path.join(dir, 'cotizacion.txt'), true),
-    leerJson(path.join(dir, 'aprobacion.json'), true),
-    leerTexto(path.join(dir, 'factura.txt'), false),
+    leerJson(path.join(dir, 'correo.json')),
+    leerJson(path.join(dir, 'solicitud.json')),
+    leerTexto(path.join(dir, 'cotizacion.txt')),
+    leerJson(path.join(dir, 'aprobacion.json')),
+    leerTexto(path.join(dir, 'factura.txt')),
   ]);
-  return {
-    id: casoId,
-    correo,
-    solicitud,
-    cotizacion: cotizacion as string,
-    aprobacion,
-    ...(factura !== undefined ? { factura } : {}),
-  };
+  return { correo, solicitud, cotizacion, aprobacion, factura };
 }
 
-export async function cargarMaestros(dataset: string): Promise<MaestrosCrudos> {
-  const dir = path.join(directorioBase(dataset), 'maestros');
+export async function leerMaestros(raiz: string, dataset: string): Promise<Maestros> {
+  const dir = path.join(directorioDataset(raiz, dataset), 'maestros');
   const [proveedores, centrosCosto, indicadoresIva, condicionesPago] = await Promise.all([
-    leerJson(path.join(dir, 'proveedores.json'), true),
-    leerJson(path.join(dir, 'centros-costo.json'), false),
-    leerJson(path.join(dir, 'indicadores-iva.json'), false),
-    leerJson(path.join(dir, 'condiciones-pago.json'), false),
+    leerJson(path.join(dir, 'proveedores.json')),
+    leerJson(path.join(dir, 'centros-costo.json')),
+    leerJson(path.join(dir, 'indicadores-iva.json')),
+    leerJson(path.join(dir, 'condiciones-pago.json')),
   ]);
-  return { proveedores, centrosCosto, indicadoresIva, condicionesPago };
+  return parsearMaestros({ proveedores, centrosCosto, indicadoresIva, condicionesPago });
 }

@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   // Los maestros, casos y el system prompt se leen en tiempo de ejecución:
   // se incluyen explícitamente en el bundle de las funciones serverless.
   outputFileTracingIncludes: {
-    '/api/**/*': ['./fixtures/**/*', './agent/**/*'],
+    '/api/**/*': ['./fixtures/**/*', './agent/**/*', './src/knowledge/**/*'],
   },
   poweredByHeader: false,
   async headers() {

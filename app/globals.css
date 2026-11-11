@@ -130,3 +130,11 @@ body {
 @media (max-width: 640px) {
   .burbuja, .tool, .aprobacion { max-width: 100%; }
 }
+
+/* Reto 03: argumentos y resumen de herramientas, indicador de pensando, confirmación */
+.tool-args { font-family: var(--mono); font-size: 11.5px; color: var(--muted); word-break: break-all; }
+.tool-resumen { padding: 0 12px 8px; font-size: 13px; }
+.pensando { color: var(--muted); font-style: italic; font-size: 13px; }
+.aprobacion ul { margin: 8px 0 12px; padding-left: 18px; font-size: 13px; }
+.aprobacion .matriz { margin-bottom: 8px; }
+.entrada input:disabled { opacity: .6; cursor: not-allowed; }

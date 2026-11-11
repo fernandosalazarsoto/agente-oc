@@ -1,64 +1,80 @@
-import { createAgentUIStreamResponse } from 'ai';
 import { z } from 'zod';
-import { crearAgenteDesdeEntorno } from '@/src/agent/runtime';
+import { ejecutarTurno } from '@/src/agent/ciclo';
+import { cargarPrompt } from '@/src/agent/prompt';
+import { guardarSesion, idSesionValido, obtenerSesion } from '@/src/agent/sesiones';
 import { diagnosticoConfig, leerConfig } from '@/src/config';
-import { recortarHistorial } from '@/src/lib/historial';
 import { LimitePeticiones } from '@/src/lib/limite-peticiones';
+import { directorioSalida } from '@/src/lib/salidas';
+import { AdaptadorAnthropic } from '@/src/llm/anthropic';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 // Controles de consumo de la API del LLM (por instancia del servidor).
 const limitePorIp = new LimitePeticiones(10, 60_000);
 const limiteGlobal = new LimitePeticiones(120, 60 * 60_000);
-const MAX_MENSAJES_AL_MODELO = 12;
 
-// Validación superficial del cuerpo: el SDK revalida la estructura de los mensajes.
 const esquemaCuerpo = z.object({
-  messages: z.array(z.unknown()).min(1).max(80),
+  sessionId: z.string().refine(idSesionValido, 'sessionId inválido'),
+  message: z.string().trim().min(1).max(2_000),
 });
 
-const MAX_BYTES = 512 * 1024;
+const error = (status: number, mensaje: string) => Response.json({ error: mensaje }, { status });
 
-function json(status: number, error: string) {
-  return Response.json({ error }, { status });
-}
-
+/**
+ * POST /api/chat { sessionId, message } → { reply, toolCalls[], needsConfirmation, pendiente }
+ */
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
-  if (!limitePorIp.permitir(ip)) return json(429, 'Demasiadas solicitudes. Intente en un minuto.');
-  if (!limiteGlobal.permitir('global')) return json(429, 'Capacidad horaria agotada. Intente más tarde.');
+  if (!limitePorIp.permitir(ip)) return error(429, 'Demasiadas solicitudes. Intente en un minuto.');
+  if (!limiteGlobal.permitir('global')) return error(429, 'Capacidad horaria agotada. Intente más tarde.');
 
   const config = leerConfig();
   const problemas = diagnosticoConfig(config);
   if (problemas.length > 0) {
     console.error('[chat] Configuración incompleta:', problemas.join('; '));
-    return json(503, 'Servicio no configurado. Contacte al administrador.');
+    return error(503, 'Servicio no configurado. Contacte al administrador.');
   }
-
-  const texto = await req.text();
-  if (texto.length > MAX_BYTES) return json(413, 'Solicitud demasiado grande');
 
   let cuerpo: z.infer<typeof esquemaCuerpo>;
   try {
+    const texto = await req.text();
+    if (texto.length > 16_384) return error(413, 'Solicitud demasiado grande');
     cuerpo = esquemaCuerpo.parse(JSON.parse(texto));
   } catch {
-    return json(400, 'Solicitud inválida');
+    return error(400, 'Solicitud inválida: se espera { sessionId, message }');
   }
 
-  return createAgentUIStreamResponse({
-    agent: crearAgenteDesdeEntorno(config),
-    uiMessages: recortarHistorial(cuerpo.messages, MAX_MENSAJES_AL_MODELO),
-    // Registro de consumo por paso (solo conteos, sin contenido) para vigilar el gasto.
-    onStepEnd: ({ usage }) => {
-      console.info(
-        `[chat] modelo=${config.AGENT_MODEL} tokens_entrada=${usage.inputTokens ?? 0} tokens_salida=${usage.outputTokens ?? 0}`,
-      );
-    },
-    // No se exponen detalles internos ni del proveedor al cliente.
-    onError: (error) => {
-      console.error('[chat] Error del agente:', error);
-      return 'Ocurrió un error procesando la solicitud. Intente nuevamente.';
-    },
-  });
+  const raiz = process.cwd();
+  const dirOut = directorioSalida(raiz);
+  try {
+    const sesion = await obtenerSesion(cuerpo.sessionId, dirOut);
+    const llm = new AdaptadorAnthropic(config.ANTHROPIC_API_KEY!, config.AGENT_MODEL, {
+      maxTokensSalida: config.AGENT_MAX_TOKENS_SALIDA,
+      timeoutMs: config.LLM_TIMEOUT_MS,
+    });
+    const resultado = await ejecutarTurno({
+      llm,
+      sesion,
+      mensaje: cuerpo.message,
+      ctx: { directory: raiz, sessionId: sesion.id },
+      opciones: {
+        topeIteraciones: config.AGENT_MAX_ITERACIONES,
+        topeTokensSesion: config.AGENT_MAX_TOKENS_SESION,
+        sistema: cargarPrompt(raiz),
+        presupuestoMs: 50_000,
+      },
+    });
+    await guardarSesion(sesion, dirOut);
+    return Response.json(resultado);
+  } catch (e) {
+    console.error('[chat] Error no controlado:', e);
+    return Response.json({
+      reply: 'Ocurrió un error interno procesando el mensaje. La sesión sigue activa: intenta de nuevo.',
+      toolCalls: [],
+      needsConfirmation: false,
+      pendiente: null,
+    });
+  }
 }

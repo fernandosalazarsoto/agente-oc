@@ -1,201 +1,264 @@
 'use client';
 
-import { useState } from 'react';
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-type Parte = UIMessage['parts'][number];
-
-interface FilaControl {
+interface LlamadaVisible {
   id: string;
   nombre: string;
-  estado: string;
-  severidad: string;
-  evidencia: string;
+  args: Record<string, unknown>;
+  ok: boolean;
+  resumen: string;
+  resultado: string;
+}
+interface Pendiente {
+  caso: string;
+  confirmaciones: Array<{ codigo: string; detalle: string }>;
+  propuesta: Propuesta | null;
+}
+interface Propuesta {
+  proveedor: { codigo_sap: string; nit: string; nombre: string };
+  moneda: string;
+  condiciones_pago: string;
+  aprobador: { email: string; fecha_aprobacion: string };
+  posiciones: Array<{ descripcion: string; cantidad: number; unidad: string; precio_unitario: number; centro_costo: string; subarea: string; indicador_iva: string }>;
+}
+interface Mensaje {
+  tipo: 'usuario' | 'asistente';
+  texto: string;
+  toolCalls?: LlamadaVisible[];
+}
+interface RespuestaChat {
+  reply: string;
+  toolCalls: LlamadaVisible[];
+  needsConfirmation: boolean;
+  pendiente: Pendiente | null;
+  error?: string;
 }
 
-const ACCIONES_RAPIDAS = ['Lista los casos disponibles', 'Procesa el caso ej-001', 'Procesa el caso ej-002'];
+const CASOS = ['sol-001', 'sol-002', 'sol-003', 'sol-004', 'sol-005', 'sol-006'];
+const PROMPT_DEMO =
+  'Procesa la solicitud "sol-004". Muéstrame la OC como quedaría en SAP, qué validaciones pasó y cuáles no, y no la crees hasta que yo lo confirme.';
+const CLAVE_SESION = 'agente-oc-sesion';
 
-const ETIQUETA_ESTADO: Record<string, { texto: string; clase: string }> = {
-  'input-streaming': { texto: 'preparando', clase: '' },
-  'input-available': { texto: 'ejecutando', clase: '' },
-  'approval-requested': { texto: 'esperando aprobación', clase: 'warn' },
-  'approval-responded': { texto: 'respuesta enviada', clase: '' },
-  'output-available': { texto: 'completada', clase: 'ok' },
-  'output-error': { texto: 'error', clase: 'bad' },
-  'output-denied': { texto: 'rechazada por el usuario', clase: 'bad' },
-};
+const formato = (n: number, moneda = 'COP') =>
+  new Intl.NumberFormat('es-CO', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(n);
 
-function claseControl(estado: string): string {
-  if (estado === 'CUMPLE') return 'ok';
-  if (estado === 'ALERTA') return 'warn';
-  if (estado === 'NO_CUMPLE') return 'bad';
-  return '';
+function nuevaSesion(): string {
+  const id = crypto.randomUUID();
+  try {
+    sessionStorage.setItem(CLAVE_SESION, id);
+  } catch {
+    /* almacenamiento no disponible: la sesión vive solo en memoria */
+  }
+  return id;
 }
 
-function MatrizControles({ salida }: { salida: { decision?: string; controles?: FilaControl[] } }) {
-  if (!Array.isArray(salida.controles)) return null;
+function MatrizControles({ resultado }: { resultado: string }) {
+  let filas: Array<{ codigo: string; estado: string; detalle: string }> = [];
+  try {
+    filas = (JSON.parse(resultado) as { data?: { controles?: typeof filas } }).data?.controles ?? [];
+  } catch {
+    return null;
+  }
+  if (!filas.length) return null;
+  const clase = (e: string) => (e === 'CUMPLE' ? 'ok' : e === 'BLOQUEO' ? 'bad' : e === 'CONFIRMACION' ? 'warn' : '');
   return (
-    <>
-      <div className="tool-cabecera">
-        Decisión: <span className={`estado ${salida.decision === 'APTA' ? 'ok' : salida.decision === 'RECHAZADA' ? 'bad' : 'warn'}`}>{salida.decision}</span>
-      </div>
-      <table className="matriz">
-        <thead>
-          <tr><th>Control</th><th>Estado</th><th>Evidencia</th></tr>
-        </thead>
-        <tbody>
-          {salida.controles.map((c) => (
-            <tr key={c.id}>
-              <td><strong>{c.id}</strong> {c.nombre}</td>
-              <td><span className={`estado ${claseControl(c.estado)}`}>{c.estado}</span></td>
-              <td>{c.evidencia}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
+    <table className="matriz">
+      <thead>
+        <tr><th>Regla</th><th>Estado</th><th>Detalle</th></tr>
+      </thead>
+      <tbody>
+        {filas.map((f, i) => (
+          <tr key={`${f.codigo}-${i}`}>
+            <td>{f.codigo}</td>
+            <td><span className={`estado ${clase(f.estado)}`}>{f.estado}</span></td>
+            <td>{f.detalle}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
-function ParteHerramienta({
-  parte,
-  responder,
-  ocupado,
-}: {
-  parte: Extract<Parte, { toolCallId: string }>;
-  responder: (id: string, aprobado: boolean) => void;
-  ocupado: boolean;
-}) {
-  const nombre = parte.type === 'dynamic-tool' ? parte.toolName : parte.type.replace(/^tool-/, '');
-  const etiqueta = ETIQUETA_ESTADO[parte.state] ?? { texto: parte.state, clase: '' };
-
-  if (parte.state === 'approval-requested' && !parte.approval.isAutomatic) {
-    return (
-      <div className="aprobacion" role="alertdialog" aria-label="Confirmación requerida">
-        <h3>Confirmación requerida: {nombre}</h3>
-        <p>El agente solicita ejecutar esta acción con los siguientes datos. Revise antes de aprobar.</p>
-        <pre>{JSON.stringify(parte.input, null, 2)}</pre>
-        <div className="botones">
-          <button className="boton" disabled={ocupado} onClick={() => responder(parte.approval.id, true)}>
-            Aprobar
-          </button>
-          <button className="boton secundario" disabled={ocupado} onClick={() => responder(parte.approval.id, false)}>
-            Rechazar
-          </button>
-        </div>
-      </div>
-    );
+function TarjetaHerramienta({ t }: { t: LlamadaVisible }) {
+  let legible = t.resultado;
+  try {
+    legible = JSON.stringify(JSON.parse(t.resultado), null, 2);
+  } catch {
+    /* se muestra tal cual */
   }
-
-  const salida = parte.state === 'output-available' ? (parte.output as Record<string, unknown>) : undefined;
-
   return (
     <div className="tool">
       <div className="tool-cabecera">
-        <span className="tool-nombre">{nombre}</span>
-        <span className={`estado ${etiqueta.clase}`}>{etiqueta.texto}</span>
+        <span className="tool-nombre">{t.nombre}</span>
+        <code className="tool-args">{JSON.stringify(t.args)}</code>
+        <span className={`estado ${t.ok ? 'ok' : 'bad'}`}>{t.ok ? 'ok' : 'error'}</span>
       </div>
-      {salida && nombre === 'validar_caso' && <MatrizControles salida={salida as never} />}
+      <div className="tool-resumen">{t.resumen}</div>
+      {t.nombre === 'oc_validar' && t.ok && <MatrizControles resultado={t.resultado} />}
       <details>
-        <summary>Entrada</summary>
-        <pre>{JSON.stringify(parte.input ?? {}, null, 2)}</pre>
+        <summary>Ver resultado completo</summary>
+        <pre>{legible}</pre>
       </details>
-      {salida && (
-        <details>
-          <summary>Resultado</summary>
-          <pre>{JSON.stringify(salida, null, 2)}</pre>
-        </details>
+    </div>
+  );
+}
+
+function TarjetaConfirmacion({ p, ocupado, responder }: { p: Pendiente; ocupado: boolean; responder: (si: boolean) => void }) {
+  const pos = p.propuesta?.posiciones?.[0];
+  return (
+    <div className="aprobacion" role="alertdialog" aria-label="Confirmación requerida">
+      <h3>Confirmación requerida · {p.caso}</h3>
+      {p.propuesta && pos && (
+        <table className="matriz">
+          <tbody>
+            <tr><th>Proveedor</th><td>{p.propuesta.proveedor.nombre} · NIT {p.propuesta.proveedor.nit} · SAP {p.propuesta.proveedor.codigo_sap}</td></tr>
+            <tr><th>Descripción</th><td>{pos.descripcion}</td></tr>
+            <tr><th>Cantidad × precio</th><td>{pos.cantidad} {pos.unidad} × {formato(pos.precio_unitario, p.propuesta.moneda)}</td></tr>
+            <tr><th>Total</th><td><strong>{formato(pos.cantidad * pos.precio_unitario, p.propuesta.moneda)}</strong></td></tr>
+            <tr><th>Centro / subárea</th><td>{pos.centro_costo} · {pos.subarea}</td></tr>
+            <tr><th>IVA · pago</th><td>{pos.indicador_iva} · {p.propuesta.condiciones_pago}</td></tr>
+            <tr><th>Aprobador</th><td>{p.propuesta.aprobador.email}</td></tr>
+          </tbody>
+        </table>
       )}
-      {parte.state === 'output-error' && <div className="error">{parte.errorText}</div>}
+      <ul>
+        {p.confirmaciones.map((c) => (
+          <li key={c.codigo}><strong>{c.codigo}</strong>: {c.detalle}</li>
+        ))}
+      </ul>
+      <div className="botones">
+        <button className="boton" disabled={ocupado} onClick={() => responder(true)}>Confirmo, crear la OC</button>
+        <button className="boton secundario" disabled={ocupado} onClick={() => responder(false)}>No confirmo</button>
+      </div>
     </div>
   );
 }
 
 export default function Pagina() {
+  const [sesion, setSesion] = useState('');
+  const [mensajes, setMensajes] = useState<Mensaje[]>([]);
+  const [pendiente, setPendiente] = useState<Pendiente | null>(null);
   const [texto, setTexto] = useState('');
-  const { messages, sendMessage, addToolApprovalResponse, status, error, stop } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-  });
-  const ocupado = status === 'submitted' || status === 'streaming';
+  const [ocupado, setOcupado] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fin = useRef<HTMLDivElement>(null);
 
-  function enviar(contenido: string) {
-    const limpio = contenido.trim();
-    if (!limpio || ocupado) return;
-    sendMessage({ text: limpio });
+  useEffect(() => {
+    let id = '';
+    try {
+      id = sessionStorage.getItem(CLAVE_SESION) ?? '';
+    } catch {
+      id = '';
+    }
+    if (!id) {
+      setSesion(nuevaSesion());
+      return;
+    }
+    setSesion(id);
+    fetch(`/api/sessions/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { historial: Mensaje[]; pendiente: Pendiente | null } | null) => {
+        if (d) {
+          setMensajes(d.historial.map((h) => ({ tipo: h.tipo, texto: h.texto, toolCalls: h.toolCalls })));
+          setPendiente(d.pendiente);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => fin.current?.scrollIntoView({ behavior: 'smooth' }), [mensajes, ocupado]);
+
+  async function enviar(mensaje: string) {
+    const limpio = mensaje.trim();
+    if (!limpio || ocupado || !sesion) return;
+    setError(null);
     setTexto('');
+    setMensajes((m) => [...m, { tipo: 'usuario', texto: limpio }]);
+    setOcupado(true);
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: sesion, message: limpio }),
+      });
+      const d = (await r.json()) as RespuestaChat;
+      if (!r.ok) throw new Error(d.error ?? 'Error');
+      setMensajes((m) => [...m, { tipo: 'asistente', texto: d.reply, toolCalls: d.toolCalls }]);
+      setPendiente(d.needsConfirmation ? d.pendiente : null);
+    } catch (e) {
+      setError(e instanceof Error && e.message !== 'Error' ? e.message : 'No fue posible completar la solicitud. Intente nuevamente.');
+    } finally {
+      setOcupado(false);
+    }
   }
 
-  function responder(id: string, aprobado: boolean) {
-    addToolApprovalResponse({
-      id,
-      approved: aprobado,
-      reason: aprobado ? 'Aprobado por el usuario en la interfaz' : 'Rechazado por el usuario en la interfaz',
-    });
+  function reiniciar() {
+    setSesion(nuevaSesion());
+    setMensajes([]);
+    setPendiente(null);
+    setError(null);
   }
+
+  const bloqueado = ocupado || pendiente !== null;
 
   return (
     <main className="app">
       <header className="encabezado">
         <div>
-          <h1>Agente de Órdenes de Compra</h1>
-          <p>Validación determinista de controles · SAP simulado · Confirmación humana obligatoria</p>
+          <h1>Agente de órdenes de compra</h1>
+          <p>Lee el paquete, valida RC1–RC10, construye la OC y la crea en el SAP simulado con confirmación humana.</p>
         </div>
         <div className="acciones">
-          {ACCIONES_RAPIDAS.map((a) => (
-            <button key={a} className="chip" disabled={ocupado} onClick={() => enviar(a)}>
-              {a}
-            </button>
+          <button className="chip" disabled={bloqueado} onClick={() => enviar('Lista los casos disponibles')}>Listar casos</button>
+          {CASOS.map((c) => (
+            <button key={c} className="chip" disabled={bloqueado} onClick={() => enviar(`Procesa la solicitud ${c}`)}>Procesar {c}</button>
           ))}
+          <button className="chip" disabled={bloqueado} onClick={() => enviar(PROMPT_DEMO)}>Demo PRD (sol-004)</button>
+          <button className="chip" disabled={ocupado} onClick={reiniciar}>Nueva sesión</button>
         </div>
       </header>
 
       <section className="mensajes" aria-live="polite">
-        {messages.length === 0 && (
-          <p className="vacio">Indique el caso a procesar o use una acción rápida.</p>
-        )}
-        {messages.map((m) => (
-          <div key={m.id} className={`mensaje ${m.role === 'user' ? 'usuario' : 'asistente'}`}>
-            {m.parts.map((parte, i) => {
-              if (parte.type === 'text') {
-                return parte.text.trim() ? (
-                  <div key={i} className="burbuja">
-                    {m.role === 'user' ? parte.text : <ReactMarkdown remarkPlugins={[remarkGfm]}>{parte.text}</ReactMarkdown>}
-                  </div>
-                ) : null;
-              }
-              if ('toolCallId' in parte) {
-                return <ParteHerramienta key={parte.toolCallId} parte={parte} responder={responder} ocupado={ocupado} />;
-              }
-              return null;
-            })}
+        {mensajes.length === 0 && <p className="vacio">Escribe "procesa la solicitud sol-001" o usa una acción rápida.</p>}
+        {mensajes.map((m, i) => (
+          <div key={i} className={`mensaje ${m.tipo}`}>
+            {m.toolCalls?.map((t) => <TarjetaHerramienta key={t.id} t={t} />)}
+            <div className="burbuja">
+              {m.tipo === 'asistente' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.texto}</ReactMarkdown> : m.texto}
+            </div>
           </div>
         ))}
-        {error && <div className="error">No fue posible completar la solicitud. Intente nuevamente.</div>}
+        {ocupado && <div className="pensando">El agente está pensando y ejecutando herramientas…</div>}
+        {pendiente && (
+          <TarjetaConfirmacion
+            p={pendiente}
+            ocupado={ocupado}
+            responder={(si) => enviar(si ? `Confirmo la creación de la OC de ${pendiente.caso}` : `No confirmo la OC de ${pendiente.caso}`)}
+          />
+        )}
+        {error && <div className="error">{error}</div>}
+        <div ref={fin} />
       </section>
 
       <form
         className="entrada"
         onSubmit={(e) => {
           e.preventDefault();
-          enviar(texto);
+          void enviar(texto);
         }}
       >
         <input
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
-          placeholder="Ej.: Procesa el caso sol-001"
+          placeholder={pendiente ? 'Responde la confirmación pendiente con los botones' : 'Escribe tu mensaje…'}
+          disabled={bloqueado}
           maxLength={2000}
           aria-label="Mensaje"
         />
-        {ocupado ? (
-          <button type="button" className="boton secundario" onClick={() => stop()}>Detener</button>
-        ) : (
-          <button type="submit" className="boton" disabled={!texto.trim()}>Enviar</button>
-        )}
+        <button type="submit" className="boton" disabled={bloqueado || !texto.trim()}>Enviar</button>
       </form>
     </main>
   );

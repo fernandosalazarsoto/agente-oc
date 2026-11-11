@@ -16,7 +16,7 @@ const confirmaciones = (v: Validacion) => v.confirmaciones.map((c) => c.codigo);
 
 describe('Lectura de documentos (PRD §7.1, §7.2)', () => {
   it('extrae de la cotización proveedor, NIT sin DV, total, referencia y validez', () => {
-    const c = parsearCotizacion(archivosDe('sol-001').cotizacion!);
+    const c = parsearCotizacion(archivosDe('sol-001').cotizacion!)!;
     expect(c.proveedor).toBe('TecnoSuministros S.A.S.');
     expect(c.nit).toBe('900555111');
     expect(c.total).toBe(11_400_000);
@@ -26,7 +26,7 @@ describe('Lectura de documentos (PRD §7.1, §7.2)', () => {
   });
 
   it('no confunde el subtotal del ítem con el TOTAL de la cotización', () => {
-    expect(parsearCotizacion(archivosDe('sol-004').cotizacion!).total).toBe(26_500_000);
+    expect(parsearCotizacion(archivosDe('sol-004').cotizacion!)!.total).toBe(26_500_000);
   });
 
   it('extrae número, fecha y total de la factura', () => {
