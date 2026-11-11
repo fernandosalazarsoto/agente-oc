@@ -1,0 +1,61 @@
+{
+  "casos": {
+    "sol-001": {
+      "apta": true,
+      "bloqueos": [],
+      "confirmaciones": [],
+      "derivados": [],
+      "retroactiva": false,
+      "creaOC": "SIN_CONFIRMACION"
+    },
+    "sol-002": {
+      "apta": false,
+      "bloqueos": ["RC1"],
+      "confirmaciones": [],
+      "derivados": [],
+      "retroactiva": false,
+      "creaOC": "NO"
+    },
+    "sol-003": {
+      "apta": false,
+      "bloqueos": ["RC2"],
+      "confirmaciones": [],
+      "derivados": [],
+      "retroactiva": false,
+      "creaOC": "NO"
+    },
+    "sol-004": {
+      "apta": true,
+      "bloqueos": [],
+      "confirmaciones": ["RC5"],
+      "derivados": [],
+      "retroactiva": false,
+      "creaOC": "CON_CONFIRMACION"
+    },
+    "sol-005": {
+      "apta": true,
+      "bloqueos": [],
+      "confirmaciones": ["RC8"],
+      "derivados": [],
+      "retroactiva": true,
+      "creaOC": "CON_CONFIRMACION"
+    },
+    "sol-006": {
+      "apta": true,
+      "bloqueos": [],
+      "confirmaciones": ["RC6"],
+      "derivados": ["indicador_iva", "condiciones_pago"],
+      "retroactiva": false,
+      "creaOC": "CON_CONFIRMACION"
+    }
+  },
+  "secuenciaDemo": {
+    "descripcion": "Orden de demo.ts sobre out/ limpio: los 6 casos sin confirmar, sol-001 de nuevo (idempotencia) y luego confirmación explícita de sol-004, sol-005 y sol-006",
+    "ordenes": {
+      "sol-001": "4500000001",
+      "sol-004": "4500000002",
+      "sol-005": "4500000003",
+      "sol-006": "4500000004"
+    }
+  }
+}

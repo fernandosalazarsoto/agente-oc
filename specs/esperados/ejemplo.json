@@ -1,4 +1,0 @@
-{
-  "ej-001": { "decision": "APTA", "bloqueantes": [], "advertencias": [], "creaOC": true },
-  "ej-002": { "decision": "RECHAZADA", "bloqueantes": ["EJ-01"], "advertencias": [], "creaOC": false }
-}

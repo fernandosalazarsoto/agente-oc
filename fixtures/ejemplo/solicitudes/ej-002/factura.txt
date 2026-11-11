@@ -1,3 +1,0 @@
-FACTURA N° F-0002
-Fecha: 2026-01-05
-Total: $ 500.000
