@@ -3,6 +3,7 @@
 - **URL pública:** https://agente-oc.vercel.app (acceso: ver README)
 - **Repositorio:** https://github.com/fernandosalazarsoto/agente-oc
 - **Verificación sin LLM:** `npm run demo` → 6/6 casos conformes con `specs/esperados/reto-03.json`
+- **Verificado en producción con el modelo real (2026-11-10, 20:48):** sol-001 → OC 4500000001 · demo del PRD con sol-004 → tabla, RC5 con ambos valores, tarjeta de confirmación → tras "Confirmo", OC 4500000002 · sol-001 repetida → mismo número (idempotente) · sol-005 → confirmación RC8 → OC 4500000003 marcada retroactiva · sol-002 → bloqueada por RC1 con acción sugerida. Sin errores en los logs de Vercel.
 - **Pruebas:** `npm test` → 114 pruebas en verde · `npm run verify` (typecheck + tests + demo) · build sin warnings · CI en GitHub Actions
 
 ---
