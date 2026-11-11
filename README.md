@@ -7,8 +7,17 @@ Agente conversacional en TypeScript que lee el paquete de una solicitud de compr
 ## Link de prueba
 
 - **URL:** https://agente-oc.vercel.app
-- **Acceso:** HTTP Basic. Usuario `evaluador`. Clave: CLAVE_DE_ACCESO
-- **Salud:** https://agente-oc.vercel.app/api/health (público)
+- **Acceso:** HTTP Basic (el navegador pide usuario y contraseña). Las credenciales están en este enlace de Password Pusher: https://eu.pwpush.com/p/saprcueokask_9zuwcq/r
+- **Salud:** https://agente-oc.vercel.app/api/health (público, sin credenciales)
+
+Cómo obtener las credenciales:
+
+1. Abre el enlace. En el centro de la pantalla aparece un mensaje para continuar: haz clic en él.
+2. Se muestra un campo para la palabra clave. Escribe `prueba llm periferia` tal cual: con un espacio entre palabras y sin espacios al inicio ni al final.
+3. Las credenciales aparecen difuminadas. Usa la opción de copiar el mensaje y pégalo en un bloc de notas para leerlas.
+4. Entra a la URL con ese usuario y esa contraseña. Ninguno de los dos tiene espacios al inicio ni al final.
+
+Cada apertura del enlace cuenta como una vista y el enlace caduca. Si ya no está disponible, las credenciales van también en el correo de entrega.
 
 ## Arranque local (un comando)
 
