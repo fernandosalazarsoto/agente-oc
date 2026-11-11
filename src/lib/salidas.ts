@@ -22,6 +22,12 @@ export async function escribirArchivo(dirOut: string, relativa: string, contenid
   await writeFile(ruta, contenido, 'utf8');
 }
 
+export async function escribirBinario(dirOut: string, relativa: string, contenido: Uint8Array): Promise<void> {
+  const ruta = path.join(dirOut, relativa);
+  await mkdir(path.dirname(ruta), { recursive: true });
+  await writeFile(ruta, contenido);
+}
+
 export async function anexarLinea(dirOut: string, relativa: string, linea: string): Promise<void> {
   const ruta = path.join(dirOut, relativa);
   await mkdir(path.dirname(ruta), { recursive: true });

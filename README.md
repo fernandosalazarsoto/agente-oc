@@ -26,7 +26,7 @@ Con Bun: `bun install && bun run dev`.
 
 ```bash
 npm run demo          # o: npx tsx demo.ts · bun run demo.ts
-npm run verify        # typecheck + 105 tests + demo
+npm run verify        # typecheck + 110 tests + demo
 ```
 
 `demo.ts` limpia `out/`, procesa los 6 casos llamando directamente a las herramientas zod, muestra la idempotencia (sol-001 dos veces) y la confirmación explícita (simulada) de sol-004, sol-005 y sol-006, y compara contra `specs/esperados/reto-03.json`.
@@ -62,13 +62,13 @@ npm run verify        # typecheck + 105 tests + demo
 | `oc_leer_paquete` | `{ caso }` | Paquete normalizado (PRD §7.2) + `faltantes` |
 | `oc_validar` | `{ caso, paquete? }` | `{ apta, bloqueos[], confirmaciones[], derivados, retroactiva, controles[] }` |
 | `oc_construir_payload` | `{ caso, paquete?, derivados? }` | `{ payload: OrdenCompra, ruta_trazabilidad }` |
-| `oc_generar_evidencia` | `{ caso }` | `{ ruta, sha256 }` |
+| `oc_generar_evidencia` | `{ caso }` | `{ ruta, sha256, ruta_pdf }` |
 | `oc_crear` | `{ caso, payload, confirmado? }` | `{ numero_oc, fecha, idempotente }` o `{ ok: false, error }` |
 | `oc_listar_casos` | `{}` | `{ casos[] }` |
 
 ## Salidas en `out/`
 
-`sap/ordenes.jsonl` (SAP simulado) · `control.csv` (cada intento: `solicitud_id, resultado, numero_oc, retroactiva, bloqueos, confirmaciones, ts`) · `log.jsonl` (cada llamada a herramienta) · `<caso>/trazabilidad.json` · `<caso>/aprobacion.txt` · `sesiones/`.
+`sap/ordenes.jsonl` (SAP simulado) · `control.csv` (cada intento: `solicitud_id, resultado, numero_oc, retroactiva, bloqueos, confirmaciones, ts`) · `log.jsonl` (cada llamada a herramienta) · `<caso>/trazabilidad.json` · `<caso>/aprobacion.txt` y `<caso>/aprobacion.pdf` · `sesiones/`.
 
 ## Estructura
 
@@ -81,6 +81,7 @@ src/sap/adapter.ts, mock.ts      interfaz SapAdapter y SAP simulado sobre out/sa
 src/llm/adapter.ts, anthropic.ts interfaz enviar() y proveedor Anthropic
 src/agent/                       ciclo del agente, confirmación, sesiones, prompt
 app/                             chat (page.tsx) y API (chat, sessions, health)
+modulo/                          bonus PRD 9.4: agent.md, tools/oc.ts, skill/ordenes-compra/SKILL.md (npm run modulo)
 fixtures/reto-03/                maestros y solicitudes (sin modificar)
 specs/                           SDD: controles, esperados, supuestos
 tests/                           Vitest

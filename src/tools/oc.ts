@@ -16,7 +16,8 @@ import { ErrorPaquete, normalizarPaquete, type Maestros, type Paquete } from '..
 import { validarPaquete, type Validacion } from '../domain/reglas';
 import { SapMock } from '../sap/mock';
 import type { SapAdapter } from '../sap/adapter';
-import { ahoraBogota, anexarLinea, directorioSalida, escribirArchivo, registrarControl } from '../lib/salidas';
+import { ahoraBogota, anexarLinea, directorioSalida, escribirArchivo, escribirBinario, registrarControl } from '../lib/salidas';
+import { generarEvidenciaPdf } from '../lib/evidencia-pdf';
 
 export interface ContextoHerramienta {
   /** Raíz del proyecto: las rutas se resuelven desde aquí, nunca absolutas. */
@@ -135,9 +136,13 @@ function ordenDe(e: CasoEvaluado): { orden: OrdenCompra; trazabilidad: Record<st
 async function escribirEvidencia(e: CasoEvaluado, ctx: ContextoHerramienta) {
   if (!e.paquete.aprobacion) throw new ErrorPaquete('Falta aprobacion.json: pida al líder el correo de aprobación');
   const ev = generarEvidencia(e.paquete.aprobacion);
+  const dirOut = directorioSalida(ctx.directory);
   const relativa = `${e.paquete.caso}/aprobacion.txt`;
-  await escribirArchivo(directorioSalida(ctx.directory), relativa, ev.texto);
-  return { ruta: `out/${relativa}`, sha256: ev.sha256 };
+  const relativaPdf = `${e.paquete.caso}/aprobacion.pdf`;
+  await escribirArchivo(dirOut, relativa, ev.texto);
+  // P1: el mismo contenido y sha256 en PDF (adjunto para la OC)
+  await escribirBinario(dirOut, relativaPdf, await generarEvidenciaPdf(ev.texto, e.paquete.aprobacion.fecha));
+  return { ruta: `out/${relativa}`, sha256: ev.sha256, ruta_pdf: `out/${relativaPdf}` };
 }
 
 const codigos = (xs: Array<{ codigo: string }>) => xs.map((x) => x.codigo);
@@ -216,7 +221,7 @@ export const construir_payload = definir(
 
 export const generar_evidencia = definir(
   'generar_evidencia',
-  'Genera la evidencia del correo de aprobación en out/<caso>/aprobacion.txt (encabezados, cuerpo y sha256) para adjuntarla a la OC.',
+  'Genera la evidencia del correo de aprobación en out/<caso>/aprobacion.txt y aprobacion.pdf (encabezados, cuerpo y sha256) para adjuntarla a la OC.',
   { caso },
   async (a, ctx) => escribirEvidencia(await evaluar(a.caso, ctx), ctx),
 );

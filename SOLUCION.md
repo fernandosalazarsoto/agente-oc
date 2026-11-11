@@ -3,7 +3,7 @@
 - **URL pública:** https://agente-oc.vercel.app (acceso: ver README)
 - **Repositorio:** https://github.com/fernandosalazarsoto/agente-oc
 - **Verificación sin LLM:** `npm run demo` → 6/6 casos conformes con `specs/esperados/reto-03.json`
-- **Pruebas:** `npm test` → 105 pruebas en verde · `npm run verify` (typecheck + tests + demo) · build sin warnings · CI en GitHub Actions
+- **Pruebas:** `npm test` → 110 pruebas en verde · `npm run verify` (typecheck + tests + demo) · build sin warnings · CI en GitHub Actions
 
 ---
 
@@ -38,7 +38,7 @@ La analista administrativa digita a mano cada OC en SAP y valida de memoria prov
                                            ▼                           ▼
                         fixtures/reto-03/ (solo lectura)     out/ (escritura): sap/ordenes.jsonl,
                         maestros + solicitudes               control.csv, log.jsonl, <caso>/trazabilidad.json,
-                                                             <caso>/aprobacion.txt, sesiones/
+                                                             <caso>/aprobacion.txt y .pdf, sesiones/
 ```
 
 | Pieza | Dónde vive | Qué contiene |
@@ -173,6 +173,18 @@ Por qué, dada una viabilidad no confirmada: es la API estándar liberada para c
 | D6 | `out/` en `/tmp` en Vercel | Almacenamiento externo (Blob, KV, base de datos) | El PRD excluye base de datos y no se agregan cuentas ni dependencias en 2 horas. Costo: numeración y sesiones efímeras por instancia en la URL pública (en local y en la demo es determinista) |
 | D7 | Sonnet 5.5 por defecto | Haiku 5.5 (unas 20 veces más barato) | Robustez en cadenas de herramientas y en copiar el payload exacto. Configurable con `AGENT_MODEL` |
 
+**Dependencias y justificación (PRD §8):**
+
+| Dependencia | Para qué | Por qué esta |
+|---|---|---|
+| `next`, `react`, `react-dom` | Front de chat y API en un solo proyecto y un solo despliegue | Un comando levanta todo (`npm run dev`); despliegue nativo en Vercel |
+| `zod` | Argumentos de herramientas, esquema de `OrdenCompra`, fixtures y configuración | Obligatorio en el PRD; genera el JSON Schema que ve el modelo |
+| `react-markdown`, `remark-gfm` | Mostrar las tablas que redacta el agente | Render seguro de Markdown sin HTML arbitrario |
+| `pdf-lib` | Evidencia en PDF (HU-4 P1) | JavaScript puro, sin binarios nativos; funciona en serverless |
+| `typescript`, `tsx`, `vitest`, `@types/*` (desarrollo) | Tipado, `demo.ts` y scripts, pruebas | Estándar del ecosistema, sin configuración extra |
+
+No se usa SDK de Anthropic ni framework de agentes: el adaptador es un `fetch` a la Messages API (menos dependencias y control total del ciclo). Se retiraron `ai`, `@ai-sdk/anthropic` y `@ai-sdk/react` de la base técnica.
+
 **Mejoras incorporadas desde la prueba en producción de la base técnica:** respuesta limitada al caso en curso y bloqueo de la entrada con una confirmación pendiente (antes se mezclaban casos); tarjeta de confirmación con la OC propuesta (antes solo mostraba el id); orden obligatorio "resumen → OC → validaciones → derivados → pregunta"; fecha de SAP en hora de Bogotá (antes UTC); sección de Alcance en el prompt.
 
 ## 9. Supuestos
@@ -200,13 +212,14 @@ Detalle completo, alternativa descartada e impacto en `specs/supuestos.md`:
 | HU-1 Leer el paquete | Hecho | `oc_leer_paquete`; ausentes en `null` + `faltantes` | Leer `.xlsx` y PDF reales (P1 `oc_leer_excel`) |
 | HU-2 Validar RC1-RC10 | Hecho | `oc_validar`, 30+ pruebas por regla | Maestros consultados en SAP en tiempo real |
 | HU-3 Payload + trazabilidad | Hecho | `oc_construir_payload`, esquema zod, `out/<caso>/trazabilidad.json` | OC con varias posiciones |
-| HU-4 Evidencia | Parcial | P0: `out/<caso>/aprobacion.txt` con sha256. P1 PDF no hecho | PDF (`pdf-lib`) y firma digital si Auditoría la exige |
+| HU-4 Evidencia | Hecho | P0: `out/<caso>/aprobacion.txt` con sha256. P1: `out/<caso>/aprobacion.pdf` (pdf-lib), mismo contenido y sha256, reproducible | Firma digital o adjuntar el `.eml` original si Auditoría lo exige |
 | HU-5 Crear en SAP simulado | Hecho | Secuencia desde 4500000001, idempotencia, `out/sap/ordenes.jsonl`, `out/control.csv` | Adaptador real (§6) y almacenamiento persistente |
 | HU-6 Errores | Hecho | JSON malformado, monto no numérico, caso inexistente: `{ ok: false, error }` legible | Notificación automática al solicitante |
 | Front de chat | Hecho | Historial, "pensando", tarjeta por herramienta, matriz, confirmación resaltada | Streaming |
 | Backend y API §6.4 | Hecho | `/api/chat`, `/api/sessions/:id`, `/api/health` | Autenticación real (SSO) y roles |
 | `demo.ts` sin modelo | Hecho | 6/6 conformes, idempotencia y confirmación explícita | |
-| Bonus `modulo/` | No hecho | | Empaquetar `agent.md`, `tools/oc.ts` y `SKILL.md` desde las mismas fuentes |
+| P1 `oc_leer_excel` | No hecho | Los fixtures traen la solicitud normalizada en JSON | Lectura de `.xlsx` real (por ejemplo, SheetJS) |
+| Bonus `modulo/` | Hecho | `agent.md` y `SKILL.md` generados desde `agent/prompt.md` y `src/knowledge/` (`npm run modulo`); `tools/oc.ts` reexporta las mismas herramientas; `tests/extras.test.ts` falla si divergen | En otra plataforma, CA3 depende de su mecanismo de permisos para `oc_crear` |
 
 ## 11. Uso de IA
 
