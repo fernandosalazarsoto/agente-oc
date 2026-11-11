@@ -15,7 +15,7 @@ const esquemaConfig = z.object({
   AGENT_MAX_ITERACIONES: entero(12),
   AGENT_MAX_TOKENS_SESION: entero(300_000),
   AGENT_MAX_TOKENS_SALIDA: entero(1_500),
-  LLM_TIMEOUT_MS: entero(40_000),
+  LLM_TIMEOUT_MS: entero(25_000),
   APP_ACCESS_USER: z.string().min(1).default('evaluador'),
   APP_ACCESS_PASSWORD: z.string().min(1).optional(),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

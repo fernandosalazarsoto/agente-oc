@@ -63,7 +63,7 @@ export async function POST(req: Request) {
         topeIteraciones: config.AGENT_MAX_ITERACIONES,
         topeTokensSesion: config.AGENT_MAX_TOKENS_SESION,
         sistema: cargarPrompt(raiz),
-        presupuestoMs: 50_000,
+        presupuestoMs: 30_000, // 30 s + timeout de 25 s por llamada < maxDuration de 60 s
       },
     });
     await guardarSesion(sesion, dirOut);

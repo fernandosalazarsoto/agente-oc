@@ -1,64 +1,88 @@
-# Agente de órdenes de compra
+# Agente de órdenes de compra SAP · Reto 03
 
-Agente conversacional en TypeScript que lee solicitudes de compra, valida controles de forma determinista y crea órdenes de compra en un SAP simulado, con confirmación humana obligatoria.
+Agente conversacional en TypeScript que lee el paquete de una solicitud de compra, lo valida contra los maestros (RC1-RC10), construye la OC con trazabilidad, genera la evidencia de aprobación y crea la OC en un SAP simulado, con confirmación humana para las excepciones. Planteamiento completo en [SOLUCION.md](SOLUCION.md).
 
-> **Base técnica:** el chat, el despliegue, el motor genérico de controles, la seguridad perimetral y la CI se prepararon antes de la prueba. Las especificaciones, los controles de negocio, las herramientas específicas y sus pruebas se desarrollaron durante la prueba. Ver `specs/supuestos.md`.
+> **Transparencia:** la base técnica (Next.js, despliegue, acceso básico, utilidades y CI) se preparó antes de la prueba. Las especificaciones, reglas, herramientas del contrato, ciclo del agente y tests de negocio se desarrollaron durante la prueba (ver `specs/supuestos.md`, S-01).
 
-## Requisitos
+## Link de prueba
 
-- Node.js 20 o superior
-- Clave de API de Anthropic (solo para el chat; tests y demo no la usan)
+- **URL:** https://agente-oc.vercel.app
+- **Acceso:** HTTP Basic. Usuario `evaluador`. Clave: CLAVE_DE_ACCESO
+- **Salud:** https://agente-oc.vercel.app/api/health (público)
 
-## Inicio rápido
+## Arranque local (un comando)
+
+Requisitos: Node.js 20+ (o Bun). La clave del modelo solo se necesita para el chat; tests y demo no la usan.
 
 ```bash
 npm install
-cp .env.example .env.local    # completar ANTHROPIC_API_KEY y TOOL_APPROVAL_SECRET
-npm run verify                # typecheck + tests + demo sin LLM
-npm run dev                   # http://localhost:3000
+cp .env.example .env.local     # completar ANTHROPIC_API_KEY
+npm run dev                    # front + backend en http://localhost:3000
 ```
 
-## Comandos
+Con Bun: `bun install && bun run dev`.
 
-| Comando | Qué hace |
-|---------|----------|
-| `npm test` | Pruebas automatizadas (Vitest) |
-| `npm run demo` | Procesa todos los casos llamando a las herramientas, sin LLM, y compara con lo esperado |
-| `npm run verify` | Typecheck + tests + demo |
-| `npm run build` | Build de producción |
+## Verificación sin modelo (`demo.ts`)
 
-Para otro set de datos: `DATASET=reto-03 npm run demo` (carpeta `fixtures/reto-03/`, resultados esperados en `specs/esperados/reto-03.json`).
+```bash
+npm run demo          # o: npx tsx demo.ts · bun run demo.ts
+npm run verify        # typecheck + 105 tests + demo
+```
+
+`demo.ts` limpia `out/`, procesa los 6 casos llamando directamente a las herramientas zod, muestra la idempotencia (sol-001 dos veces) y la confirmación explícita (simulada) de sol-004, sol-005 y sol-006, y compara contra `specs/esperados/reto-03.json`.
 
 ## Variables de entorno
 
 | Variable | Obligatoria | Descripción |
-|----------|-------------|-------------|
-| `ANTHROPIC_API_KEY` | Sí (chat) | Clave del proveedor LLM. Solo servidor |
-| `TOOL_APPROVAL_SECRET` | Sí en producción | Secreto HMAC (≥ 32 caracteres) para firmar aprobaciones. `openssl rand -base64 32` |
-| `AGENT_MODEL` | No | Modelo del agente. Por defecto `claude-sonnet-5-5`; alternativa de menor costo `claude-haiku-5-5` |
-| `DATASET` | No | Set de datos dentro de `fixtures/`. Por defecto `ejemplo` |
-| `APP_ACCESS_PASSWORD` | No | Si se define, la URL exige Basic Auth |
-| `APP_ACCESS_USER` | No | Usuario de Basic Auth. Por defecto `evaluador` |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Sí (chat) | Clave del proveedor. Solo servidor; nunca en el front, el repo ni los logs |
+| `AGENT_MODEL` | No | Por defecto `claude-sonnet-5-5`; alternativa `claude-haiku-5-5` |
+| `DATASET` | No | Carpeta en `fixtures/`. Por defecto `reto-03` |
+| `AGENT_MAX_ITERACIONES` | No | Tope de iteraciones herramienta → modelo por turno. Por defecto 12 |
+| `AGENT_MAX_TOKENS_SESION` | No | Tope de tokens por sesión. Por defecto 300000 |
+| `AGENT_MAX_TOKENS_SALIDA` | No | Tokens de salida por llamada. Por defecto 1500 |
+| `LLM_TIMEOUT_MS` | No | Timeout por llamada al modelo. Por defecto 25000 (el turno tiene un presupuesto de 30 s para caber en los 60 s de la función) |
+| `APP_ACCESS_PASSWORD` / `APP_ACCESS_USER` | No | Si se define la clave, la URL exige Basic Auth (usuario por defecto `evaluador`) |
+| `OUT_DIR` | No | Carpeta de salida. Por defecto `out/` (en Vercel, `/tmp/out`) |
 
-## Despliegue (Vercel)
+## API
 
-1. Importar el repositorio en Vercel (framework Next.js detectado automáticamente).
-2. Configurar las variables de entorno anteriores en *Settings → Environment Variables*.
-3. Desplegar y verificar `GET /api/health`: debe responder `"ok": true`.
+| Método | Ruta | Cuerpo / respuesta |
+|---|---|---|
+| `POST` | `/api/chat` | `{ sessionId, message }` → `{ reply, toolCalls[], needsConfirmation, pendiente }` |
+| `GET` | `/api/sessions/:id` | Historial completo de la sesión (mensajes, llamadas a herramientas, pendiente) |
+| `GET` | `/api/health` | `{ ok, provider, model, dataset, casosDisponibles, ... }` sin claves |
+
+`toolCalls[]`: `{ id, nombre, args, ok, resumen, resultado }`. `sessionId`: 8 a 64 caracteres `[A-Za-z0-9_-]`.
+
+## Herramientas (`src/tools/oc.ts`)
+
+| Modelo | Entrada | Salida (`data`) |
+|---|---|---|
+| `oc_leer_paquete` | `{ caso }` | Paquete normalizado (PRD §7.2) + `faltantes` |
+| `oc_validar` | `{ caso, paquete? }` | `{ apta, bloqueos[], confirmaciones[], derivados, retroactiva, controles[] }` |
+| `oc_construir_payload` | `{ caso, paquete?, derivados? }` | `{ payload: OrdenCompra, ruta_trazabilidad }` |
+| `oc_generar_evidencia` | `{ caso }` | `{ ruta, sha256 }` |
+| `oc_crear` | `{ caso, payload, confirmado? }` | `{ numero_oc, fecha, idempotente }` o `{ ok: false, error }` |
+| `oc_listar_casos` | `{}` | `{ casos[] }` |
+
+## Salidas en `out/`
+
+`sap/ordenes.jsonl` (SAP simulado) · `control.csv` (cada intento: `solicitud_id, resultado, numero_oc, retroactiva, bloqueos, confirmaciones, ts`) · `log.jsonl` (cada llamada a herramienta) · `<caso>/trazabilidad.json` · `<caso>/aprobacion.txt` · `sesiones/`.
 
 ## Estructura
 
 ```
-agent/prompt.md            System prompt
-app/                       UI de chat y rutas API (chat, health)
-src/agent/                 Agente (ciclo, política de aprobación) y composición
-src/tools/oc.ts            Herramientas tipadas con zod
-src/domain/                Motor de controles y reglas (puro, determinista)
-src/data/                  Lectura aislada de maestros y casos
-src/adapters/sap/          Puerto SAP y mock idempotente
-fixtures/<dataset>/        Maestros y solicitudes
-specs/                     Especificación (SDD): controles, esperados, supuestos
-tests/                     Pruebas automatizadas
-demo.ts                    Verificación sin LLM
-SOLUCION.md                Documentación técnica
+agent/prompt.md                  comportamiento (system prompt)
+src/knowledge/ordenes-compra.md  conocimiento del proceso
+src/tools/oc.ts                  herramientas zod (ejecución)
+src/domain/                      paquete, reglas RC1-RC10, orden, evidencia (puro)
+src/sap/adapter.ts, mock.ts      interfaz SapAdapter y SAP simulado sobre out/sap/
+src/llm/adapter.ts, anthropic.ts interfaz enviar() y proveedor Anthropic
+src/agent/                       ciclo del agente, confirmación, sesiones, prompt
+app/                             chat (page.tsx) y API (chat, sessions, health)
+fixtures/reto-03/                maestros y solicitudes (sin modificar)
+specs/                           SDD: controles, esperados, supuestos
+tests/                           Vitest
+demo.ts                          verificación sin modelo
 ```
