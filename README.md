@@ -26,7 +26,7 @@ Con Bun: `bun install && bun run dev`.
 
 ```bash
 npm run demo          # o: npx tsx demo.ts · bun run demo.ts
-npm run verify        # typecheck + 110 tests + demo
+npm run verify        # typecheck + 114 tests + demo
 ```
 
 `demo.ts` limpia `out/`, procesa los 6 casos llamando directamente a las herramientas zod, muestra la idempotencia (sol-001 dos veces) y la confirmación explícita (simulada) de sol-004, sol-005 y sol-006, y compara contra `specs/esperados/reto-03.json`.
@@ -44,12 +44,13 @@ npm run verify        # typecheck + 110 tests + demo
 | `LLM_TIMEOUT_MS` | No | Timeout por llamada al modelo. Por defecto 25000 (el turno tiene un presupuesto de 30 s para caber en los 60 s de la función) |
 | `APP_ACCESS_PASSWORD` / `APP_ACCESS_USER` | No | Si se define la clave, la URL exige Basic Auth (usuario por defecto `evaluador`) |
 | `OUT_DIR` | No | Carpeta de salida. Por defecto `out/` (en Vercel, `/tmp/out`) |
+| `SESSION_SECRET` | No | Clave HMAC del estado de sesión (32+ caracteres). Si falta se usa `TOOL_APPROVAL_SECRET`; en local, una aleatoria por proceso |
 
 ## API
 
 | Método | Ruta | Cuerpo / respuesta |
 |---|---|---|
-| `POST` | `/api/chat` | `{ sessionId, message }` → `{ reply, toolCalls[], needsConfirmation, pendiente }` |
+| `POST` | `/api/chat` | `{ sessionId, message, estado? }` → `{ reply, toolCalls[], needsConfirmation, pendiente, estado }` |
 | `GET` | `/api/sessions/:id` | Historial completo de la sesión (mensajes, llamadas a herramientas, pendiente) |
 | `GET` | `/api/health` | `{ ok, provider, model, dataset, casosDisponibles, ... }` sin claves |
 
@@ -68,7 +69,9 @@ npm run verify        # typecheck + 110 tests + demo
 
 ## Salidas en `out/`
 
-`sap/ordenes.jsonl` (SAP simulado) · `control.csv` (cada intento: `solicitud_id, resultado, numero_oc, retroactiva, bloqueos, confirmaciones, ts`) · `log.jsonl` (cada llamada a herramienta) · `<caso>/trazabilidad.json` · `<caso>/aprobacion.txt` y `<caso>/aprobacion.pdf` · `sesiones/`.
+`sap/ordenes.jsonl` (SAP simulado) · `control.csv` (cada intento: `solicitud_id, resultado, numero_oc, retroactiva, bloqueos, confirmaciones, ts`) · `log.jsonl` (cada llamada a herramienta) · `<caso>/trazabilidad.json` · `<caso>/aprobacion.txt` y `<caso>/aprobacion.pdf`.
+
+`demo.ts` escribe en `out/`. En el chat, cada sesión tiene los mismos archivos en `out/sesiones/<id>/` (en Vercel, `/tmp/out/...`). Su estado viaja firmado (`estado`, HMAC con `SESSION_SECRET` o `TOOL_APPROVAL_SECRET`) para que cualquier instancia serverless continúe la sesión con la misma numeración.
 
 ## Estructura
 

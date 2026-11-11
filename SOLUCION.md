@@ -3,7 +3,7 @@
 - **URL pública:** https://agente-oc.vercel.app (acceso: ver README)
 - **Repositorio:** https://github.com/fernandosalazarsoto/agente-oc
 - **Verificación sin LLM:** `npm run demo` → 6/6 casos conformes con `specs/esperados/reto-03.json`
-- **Pruebas:** `npm test` → 110 pruebas en verde · `npm run verify` (typecheck + tests + demo) · build sin warnings · CI en GitHub Actions
+- **Pruebas:** `npm test` → 114 pruebas en verde · `npm run verify` (typecheck + tests + demo) · build sin warnings · CI en GitHub Actions
 
 ---
 
@@ -47,7 +47,9 @@ La analista administrativa digita a mano cada OC en SAP y valida de memoria prov
 | **Conocimiento** | `src/knowledge/ordenes-compra.md` | Proceso, reglas RC1-RC10, retroactivas, acciones sugeridas. Se concatena al prompt en tiempo de ejecución |
 | **Ejecución** | `src/tools/oc.ts` + `src/domain/` | Herramientas tipadas y reglas deterministas. Un cambio de reglas de negocio no toca el servidor |
 
-En Vercel el sistema de archivos del bundle es de solo lectura: `out/` se escribe en `/tmp/out` (efímero por instancia). En local, `out/` en la raíz. Configurable con `OUT_DIR`.
+En Vercel el sistema de archivos del bundle es de solo lectura: `out/` se escribe en `/tmp/out`. En local, `out/` en la raíz (configurable con `OUT_DIR`). `demo.ts` usa `out/` directamente; en el chat, cada sesión tiene su carpeta `out/sesiones/<id>/` con su SAP simulado (`sap/ordenes.jsonl`), su `control.csv` y su `log.jsonl`.
+
+**Continuidad entre instancias serverless.** En la prueba en producción dos turnos de la misma sesión cayeron en instancias distintas: la segunda no tenía historial y su SAP volvió a numerar desde 4500000001. Se resolvió sin infraestructura nueva: el estado de la sesión (historial, confirmación pendiente y archivos de la sesión) viaja entre navegador y servidor firmado con HMAC-SHA256 (`src/agent/estado.ts`). Cualquier instancia continúa la sesión con la misma numeración e idempotencia, y un estado alterado se rechaza, así que no se pueden forjar confirmaciones ni órdenes.
 
 ## 3. Ciclo del agente
 
@@ -65,6 +67,7 @@ Implementado a mano en `src/agent/ciclo.ts` (sin framework de agentes), contra l
 - La UI resalta el estado con una tarjeta que muestra la OC propuesta (proveedor, NIT, descripción, cantidad × precio, total, centro y subárea, IVA, pago, aprobador) y las excepciones, y **bloquea el campo de texto** hasta que la usuaria confirme o rechace (evita mezclar casos).
 - En el turno siguiente, un detector determinista (`src/agent/confirmacion.ts`) decide si el mensaje confirma ese caso. Solo entonces `oc_crear` con `confirmado=true` se ejecuta para ese caso; cualquier intento del modelo de autoconfirmarse se bloquea en el servidor y se le devuelve el error.
 - **Errores (CA5):** un fallo o timeout del proveedor se informa en lenguaje claro, la conversación vuelve a su estado previo y la sesión sigue viva.
+- **Sesión:** `src/agent/servicio.ts` recupera la sesión desde el estado firmado (o desde memoria y archivo), ejecuta el turno y devuelve el estado nuevo; `GET /api/sessions/:id` devuelve el historial desde la instancia que atendió la sesión.
 
 ## 4. Elección del modelo
 
@@ -74,7 +77,7 @@ Implementado a mano en `src/agent/ciclo.ts` (sin framework de agentes), contra l
 | Modelo | `claude-sonnet-5-5` por defecto (`AGENT_MODEL`); `claude-haiku-5-5` como alternativa de menor costo |
 | Por qué | El flujo exige encadenar 4 a 6 llamadas de herramientas, copiar el payload sin alterarlo y respetar el orden de la respuesta en español. Se priorizó robustez en el uso de herramientas sobre costo; `temperature: 0` |
 | Costo | Precios vigentes de Sonnet 5.5: USD 2 por millón de tokens de entrada, USD 10 de salida, USD 0,10 en lectura de caché ([pricing](https://platform.claude.com/docs/en/about-claude/pricing)). El prompt de sistema y las herramientas (~4.000 tokens) van con prompt caching |
-| Costo estimado por caso | Un caso completo usa 4 a 5 llamadas al modelo: ~15.000 tokens de entrada no cacheados, ~16.000 en caché y ~1.500 de salida ≈ **USD 0,05 por caso** (≈ USD 0,08 si requiere confirmación, por el segundo turno). Con Haiku 5.5, menos de USD 0,005. Los tokens reales por paso se registran en los logs de Vercel (`[ciclo] ... tokens_entrada/tokens_salida`) |
+| Costo medido por caso | Logs de Vercel de la prueba en producción (2026-11-10). **sol-001** (sin confirmación): 4 llamadas, 30.036 tokens de entrada (incluye caché) y 970 de salida, ≈ **USD 0,04 a 0,07**. **sol-004** (demo del PRD + confirmación, 2 turnos): 5 llamadas, 40.831 de entrada y 1.760 de salida, ≈ **USD 0,06 a 0,10**. El rango depende de cuánto de la entrada se sirve desde la caché. Con Haiku 5.5, menos de USD 0,01. Los tokens por paso quedan en los logs (`[ciclo] ... tokens_entrada / tokens_salida`) |
 
 ## 5. Matriz de controles
 
@@ -170,7 +173,7 @@ Por qué, dada una viabilidad no confirmada: es la API estándar liberada para c
 | D3 | El modelo envía `paquete`, `derivados` y `payload` por contrato, pero el servidor relee el caso y `oc_crear` rechaza un payload distinto del validado (huella) | Usar lo que envía el modelo | Riesgo explícito del PRD §10: que el modelo "arregle" un monto. Costo: el modelo debe copiar el payload exacto (más tokens) |
 | D4 | La OC de sol-004 se crea por el valor de la solicitud (25 M) y la diferencia con la cotización queda como excepción confirmada | Usar el precio de la cotización (26,5 M) | El líder aprobó "25 millones según la solicitud". Costo: la factura llegará por 26,5 M y requerirá ajuste o nueva aprobación (dentro del tope de dgarcia) |
 | D5 | Respuesta JSON por turno con indicador de "pensando" | Streaming (SSE) | Más simple y robusto en serverless; el streaming es opcional en el PRD. Costo: la respuesta aparece completa al final del turno |
-| D6 | `out/` en `/tmp` en Vercel | Almacenamiento externo (Blob, KV, base de datos) | El PRD excluye base de datos y no se agregan cuentas ni dependencias en 2 horas. Costo: numeración y sesiones efímeras por instancia en la URL pública (en local y en la demo es determinista) |
+| D6 | Estado de sesión firmado que viaja con cada petición y SAP simulado por sesión (`out/sesiones/<id>/`, en `/tmp` en Vercel) | Almacenamiento compartido (Vercel Blob o KV) | Resuelve la continuidad entre instancias sin crear recursos en la cuenta ni agregar dependencias, y la firma impide forjar confirmaciones. Costo: el SAP simulado es por sesión (dos sesiones distintas pueden repetir números) y el estado crece con la conversación (se compacta a los últimos 40 mensajes) |
 | D7 | Sonnet 5.5 por defecto | Haiku 5.5 (unas 20 veces más barato) | Robustez en cadenas de herramientas y en copiar el payload exacto. Configurable con `AGENT_MODEL` |
 
 **Dependencias y justificación (PRD §8):**
@@ -200,7 +203,8 @@ Detalle completo, alternativa descartada e impacto en `specs/supuestos.md`:
 - **S-08** "Aprobado" sin distinguir mayúsculas ni tildes y no precedido de "no".
 - **S-09** RC8 y RC9 comparan fechas calendario en America/Bogota.
 - **S-10** Código de IVA o de pago informado que no existe en el maestro: bloqueo de estructura.
-- **S-11** Numeración global desde 4500000001; en Vercel, efímera por instancia.
+- **S-11** Numeración desde 4500000001: global en `demo.ts`; en el chat, por sesión.
+- **S-15** El estado de la sesión viaja firmado con HMAC entre navegador y servidor (decidido tras la prueba en producción).
 - **S-12** La confirmación en `demo.ts` es simulada.
 - **S-13** La validez de la cotización se informa pero no es regla del PRD.
 - **S-14** El servidor no usa como fuente el paquete, los derivados ni el payload que envía el modelo.
@@ -213,7 +217,7 @@ Detalle completo, alternativa descartada e impacto en `specs/supuestos.md`:
 | HU-2 Validar RC1-RC10 | Hecho | `oc_validar`, 30+ pruebas por regla | Maestros consultados en SAP en tiempo real |
 | HU-3 Payload + trazabilidad | Hecho | `oc_construir_payload`, esquema zod, `out/<caso>/trazabilidad.json` | OC con varias posiciones |
 | HU-4 Evidencia | Hecho | P0: `out/<caso>/aprobacion.txt` con sha256. P1: `out/<caso>/aprobacion.pdf` (pdf-lib), mismo contenido y sha256, reproducible | Firma digital o adjuntar el `.eml` original si Auditoría lo exige |
-| HU-5 Crear en SAP simulado | Hecho | Secuencia desde 4500000001, idempotencia, `out/sap/ordenes.jsonl`, `out/control.csv` | Adaptador real (§6) y almacenamiento persistente |
+| HU-5 Crear en SAP simulado | Hecho | Secuencia desde 4500000001, idempotencia, `out/sap/ordenes.jsonl`, `out/control.csv` (en el chat, por sesión en `out/sesiones/<id>/`, continuo entre instancias) | Adaptador real (§6) y log de control centralizado |
 | HU-6 Errores | Hecho | JSON malformado, monto no numérico, caso inexistente: `{ ok: false, error }` legible | Notificación automática al solicitante |
 | Front de chat | Hecho | Historial, "pensando", tarjeta por herramienta, matriz, confirmación resaltada | Streaming |
 | Backend y API §6.4 | Hecho | `/api/chat`, `/api/sessions/:id`, `/api/health` | Autenticación real (SSO) y roles |
@@ -242,7 +246,7 @@ Detalle completo, alternativa descartada e impacto en `specs/supuestos.md`:
 | Maestros locales distintos de SAP (proveedor bloqueado en SAP, tope cambiado) | `consultarProveedor` y lectura de maestros contra SAP antes de crear; los fixtures solo valen para el reto |
 | Prompt injection en correos, cotizaciones o facturas | Documentos tratados como datos; las reglas están en código; `oc_crear` revalida y rechaza payloads alterados; la confirmación no depende del modelo |
 | Duplicados por reintentos o concurrencia | Idempotencia por `solicitud_id` en SAP y registro en el middleware; consulta antes de cada reintento |
-| Estado efímero (`/tmp`, sesiones en memoria) | Almacenamiento persistente (base de datos o blob) para `out/`, sesiones y log de control |
+| Estado en serverless (`/tmp` por instancia) | Hoy: estado firmado por sesión. Producción: base de datos para sesiones, órdenes y un log de control único de toda la operación |
 | Consumo indebido de la clave del modelo | Basic Auth, límites por IP y por hora, tope de iteraciones y de tokens por sesión, límite de gasto en el workspace de la API; en producción, SSO y límite distribuido |
 | Precio con IVA incluido frente a precio neto de SAP | Confirmar con Contabilidad y calcular el neto desde el indicador antes del adaptador real (S-05) |
 | Validez de la evidencia ante auditoría | PDF con hash y, si se exige, firma digital o el `.eml` original como adjunto |
