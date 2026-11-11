@@ -111,6 +111,21 @@ Código: `src/domain/reglas/index.ts` (puro: sin IO, sin fecha del sistema, mont
 
 **La regla más difícil: RC2 y RC3 en sol-003.** El aprobador existe, aprueba y tiene tope suficiente, pero en otro centro (CC-3030). Leído literalmente, RC3 no se puede evaluar porque fvargas no tiene tope en CC-2020; marcarlo como segundo bloqueo duplicaría el motivo. Se decidió un solo bloqueo (RC2), RC3 como NO_EVALUABLE y una acción sugerida útil: el único aprobador de CC-2020 tampoco tiene tope para 74 M, así que hay que escalar o actualizar la matriz. Le sigue RC5: el límite exacto del 2 % se compara en enteros para evitar errores de coma flotante en el borde.
 
+### Puntos finos de los casos y cómo se resuelven
+
+Al leer los fixtures contra el PRD aparecen detalles que un procesamiento ingenuo, o un modelo que "complete" lo que falta, resolvería mal. Cada uno está cubierto por una regla en código y por pruebas automatizadas.
+
+| Caso | Detalle que exige cuidado | Cómo lo resuelve el agente | Pruebas |
+|---|---|---|---|
+| sol-003 | Quien aprueba tiene un tope de 80 M, suficiente para los 74 M, pero en otro centro (CC-3030). La solicitud es de CC-2020, cuyo único aprobador tiene tope de 30 M | Bloqueo RC2. RC3 no se evalúa con un tope de otro centro: queda NO_EVALUABLE en lugar de "cumplir" por error. La acción sugerida avisa que el aprobador de CC-2020 tampoco alcanza y que hay que escalar | `tests/reglas.test.ts` (RC2 y RC3) |
+| sol-004 | El líder aprueba "por 25 millones según la solicitud" y la cotización es de 26,5 M (6 %) | Confirmación RC5 con ambos valores. La OC se construye con el valor aprobado y la diferencia queda como excepción confirmada. `oc_crear` rechaza un payload distinto del validado, así que el modelo no puede ajustar el monto para que cuadre | `tests/reglas.test.ts` (RC5 y payload), `tests/tools.test.ts` (payload alterado) |
+| sol-005 | La factura (2026-08-10) es anterior a la solicitud (2026-08-27) y el propio correo de aprobación lo reconoce: "ya llegó la factura" | `retroactiva = true`, confirmación RC8 y marca en `control.csv` en cada intento, también en el pendiente | `tests/reglas.test.ts` (RC8), `tests/tools.test.ts` (log de control) |
+| sol-006 | No trae NIT, indicador de IVA ni condiciones de pago | El proveedor se localiza por nombre normalizado. El IVA se deriva del proveedor y exige confirmación (RC6). Las condiciones de pago se derivan y solo se informan (RC7) | `tests/reglas.test.ts` (RC1, RC6 y RC7) |
+| sol-002 | El NIT inexistente es el mismo en la solicitud y en la cotización: no es un error de digitación, el proveedor no está en el maestro | Bloqueo RC1 con acción sugerida (crear el proveedor o corregir el NIT). No se construye el payload | `tests/reglas.test.ts` (RC1), `tests/tools.test.ts` (caso bloqueado) |
+| Todos | En las cotizaciones el NIT viene con puntos y dígito de verificación (900.555.111-2), y la línea del ítem trae un "Subtotal" además del "TOTAL" | El NIT se compara por su base numérica y el total se toma solo de la línea TOTAL | `tests/reglas.test.ts` (lectura de documentos, RC1) |
+| Todos | Varias aprobaciones son del mismo día de la solicitud, con hora (sol-002, sol-004, sol-006) | RC9 compara fechas calendario en America/Bogota: el mismo día cumple | `tests/reglas.test.ts` (RC9) |
+| Maestro | Hay un proveedor inactivo (Consultores Ágiles) que ningún caso usa | RC1 lo bloquea igualmente | `tests/reglas.test.ts` (RC1, proveedor inactivo) |
+
 ## 6. Diseño del adaptador SAP real (PRD §7.5)
 
 **Opción elegida: OData `API_PURCHASEORDER_PROCESS_SRV` expuesto a través de SAP BTP (Destination + Cloud Connector si el sistema es on-premise), con BAPI `BAPI_PO_CREATE1` vía SAP Integration Suite como alternativa si el sistema es ECC.**
