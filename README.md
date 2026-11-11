@@ -19,6 +19,12 @@ Cómo obtener las credenciales:
 
 Cada apertura del enlace cuenta como una vista y el enlace caduca. Si ya no está disponible, las credenciales van también en el correo de entrega.
 
+Límites de uso (protegen la clave del modelo; detalle en el anexo de [SOLUCION.md](SOLUCION.md)):
+
+- 10 mensajes por minuto por IP y 120 por hora.
+- 1.000.000 de tokens por sesión, unos 12 casos. Al alcanzarlo, el chat pide iniciar otra con "Nueva sesión".
+- Cada turno tiene un tope de 12 iteraciones y 30 segundos.
+
 ## Arranque local (un comando)
 
 Requisitos: Node.js 20+ (o Bun). La clave del modelo solo se necesita para el chat; tests y demo no la usan.
@@ -48,7 +54,7 @@ npm run verify        # typecheck + 114 tests + demo
 | `AGENT_MODEL` | No | Por defecto `claude-sonnet-5-5`; alternativa `claude-haiku-5-5` |
 | `DATASET` | No | Carpeta en `fixtures/`. Por defecto `reto-03` |
 | `AGENT_MAX_ITERACIONES` | No | Tope de iteraciones herramienta → modelo por turno. Por defecto 12 |
-| `AGENT_MAX_TOKENS_SESION` | No | Tope de tokens por sesión. Por defecto 300000 |
+| `AGENT_MAX_TOKENS_SESION` | No | Tope de tokens por sesión (entrada más salida). Por defecto 1000000, unos 12 casos |
 | `AGENT_MAX_TOKENS_SALIDA` | No | Tokens de salida por llamada. Por defecto 1500 |
 | `LLM_TIMEOUT_MS` | No | Timeout por llamada al modelo. Por defecto 25000 (el turno tiene un presupuesto de 30 s para caber en los 60 s de la función) |
 | `APP_ACCESS_PASSWORD` / `APP_ACCESS_USER` | No | Si se define la clave, la URL exige Basic Auth (usuario por defecto `evaluador`) |

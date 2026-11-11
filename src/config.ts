@@ -15,7 +15,7 @@ const esquemaConfig = z.object({
   DATASET: z.string().min(1).default('reto-03'),
   // Topes de costo (PRD §8): iteraciones por turno, tokens por sesión, salida por paso y timeout.
   AGENT_MAX_ITERACIONES: entero(12),
-  AGENT_MAX_TOKENS_SESION: entero(300_000),
+  AGENT_MAX_TOKENS_SESION: entero(1_000_000),
   AGENT_MAX_TOKENS_SALIDA: entero(1_500),
   LLM_TIMEOUT_MS: entero(25_000),
   APP_ACCESS_USER: z.string().min(1).default('evaluador'),

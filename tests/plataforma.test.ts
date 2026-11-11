@@ -8,7 +8,7 @@ describe('Configuración', () => {
     expect(c.DATASET).toBe('reto-03');
     expect(c.AGENT_MODEL).toBe('claude-sonnet-5-5');
     expect(c.AGENT_MAX_ITERACIONES).toBe(12);
-    expect(c.AGENT_MAX_TOKENS_SESION).toBeGreaterThan(0);
+    expect(c.AGENT_MAX_TOKENS_SESION).toBe(1_000_000);
     expect(leerConfig({ NODE_ENV: 'test', AGENT_MAX_ITERACIONES: '5' }).AGENT_MAX_ITERACIONES).toBe(5);
   });
 

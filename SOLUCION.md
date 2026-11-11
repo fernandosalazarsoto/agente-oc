@@ -61,7 +61,7 @@ Implementado a mano en `src/agent/ciclo.ts` (sin framework de agentes), contra l
 3. Si el modelo pide herramientas, el servidor las ejecuta: `execute` valida los argumentos con zod, devuelve `{ ok, data }` o `{ ok: false, error }` y nunca lanza. Cada llamada queda en el historial visible y en `out/log.jsonl` (CA4). El resultado vuelve al modelo como `tool_result`.
 4. Repite hasta que el modelo responde sin herramientas o se alcanza el tope.
 
-**Topes (CA1, PRD §8 Costo):** `AGENT_MAX_ITERACIONES` (12 por turno), presupuesto de 30 s por turno (más el timeout de la última llamada, dentro de los 60 s de la función serverless), `AGENT_MAX_TOKENS_SESION` (300.000 por sesión), `AGENT_MAX_TOKENS_SALIDA` (1.500 por paso), `LLM_TIMEOUT_MS` (25 s), 10 peticiones por minuto por IP y 120 por hora por instancia. Al alcanzar el tope, el agente responde con las herramientas ejecutadas y lo que falta.
+**Topes (CA1, PRD §8 Costo):** `AGENT_MAX_ITERACIONES` (12 por turno), presupuesto de 30 s por turno (más el timeout de la última llamada, dentro de los 60 s de la función serverless), `AGENT_MAX_TOKENS_SESION` (1.000.000 por sesión), `AGENT_MAX_TOKENS_SALIDA` (1.500 por paso), `LLM_TIMEOUT_MS` (25 s), 10 peticiones por minuto por IP y 120 por hora por instancia. Al alcanzar el tope, el agente responde con las herramientas ejecutadas y lo que falta. El detalle de cada límite y lo que ve la usuaria está en el anexo de seguridad y límites de uso.
 
 **Confirmación humana (CA3), verificada en el servidor y no en el prompt:**
 - Cuando `oc_validar` devuelve confirmaciones o `oc_crear` responde `requiere_confirmacion`, la sesión guarda un **pendiente** `{ caso, confirmaciones, propuesta }` y la respuesta trae `needsConfirmation: true`.
@@ -78,7 +78,7 @@ Implementado a mano en `src/agent/ciclo.ts` (sin framework de agentes), contra l
 | Modelo | `claude-sonnet-5-5` por defecto (`AGENT_MODEL`); `claude-haiku-5-5` como alternativa de menor costo |
 | Por qué | El flujo exige encadenar 4 a 6 llamadas de herramientas, copiar el payload sin alterarlo y respetar el orden de la respuesta en español. Se priorizó robustez en el uso de herramientas sobre costo; `temperature: 0` |
 | Costo | Precios vigentes de Sonnet 5.5: USD 2 por millón de tokens de entrada, USD 10 de salida, USD 0,10 en lectura de caché ([pricing](https://platform.claude.com/docs/en/about-claude/pricing)). El prompt de sistema y las herramientas (~4.000 tokens) van con prompt caching |
-| Costo medido por caso | Logs de Vercel de la prueba en producción (2026-11-10). **sol-001** (sin confirmación): 4 llamadas, 30.036 tokens de entrada (incluye caché) y 970 de salida, ≈ **USD 0,04 a 0,07**. **sol-004** (demo del PRD + confirmación, 2 turnos): 5 llamadas, 40.831 de entrada y 1.760 de salida, ≈ **USD 0,06 a 0,10**. El rango depende de cuánto de la entrada se sirve desde la caché. Con Haiku 5.5, menos de USD 0,01. Los tokens por paso quedan en los logs (`[ciclo] ... tokens_entrada / tokens_salida`) |
+| Costo medido por caso | Logs de Vercel de la prueba en producción (2026-11-10). En una sesión nueva: **sol-001** (sin confirmación), 4 llamadas, 30.036 tokens de entrada (incluye caché) y 970 de salida, ≈ **USD 0,04 a 0,07**; **sol-004** (demo del PRD + confirmación, 2 turnos), 5 llamadas, 40.831 de entrada y 1.760 de salida, ≈ **USD 0,06 a 0,10**. En una sesión larga el historial acumulado sube el consumo: **sol-005** con confirmación, como cuarto caso de la sesión, usó 6 llamadas, 106.225 tokens de entrada y 2.186 de salida, ≈ **USD 0,17 a 0,23**. Esa sesión completa (4 casos, 19 llamadas) sumó 263.763 tokens, ≈ USD 0,39 a 0,58. El rango depende de cuánto de la entrada se sirve desde la caché. Con Haiku 5.5, unas 20 veces menos. Mejora prevista: cachear también el historial y resumir los casos ya cerrados. Los tokens por paso quedan en los logs (`[ciclo] ... tokens_entrada / tokens_salida`) |
 
 ## 5. Matriz de controles
 
@@ -206,6 +206,7 @@ Detalle completo, alternativa descartada e impacto en `specs/supuestos.md`:
 - **S-10** Código de IVA o de pago informado que no existe en el maestro: bloqueo de estructura.
 - **S-11** Numeración desde 4500000001: global en `demo.ts`; en el chat, por sesión.
 - **S-15** El estado de la sesión viaja firmado con HMAC entre navegador y servidor (decidido tras la prueba en producción).
+- **S-16** Tope de 1.000.000 de tokens por sesión, fijado con la medición de consumo en producción.
 - **S-12** La confirmación en `demo.ts` es simulada.
 - **S-13** La validez de la cotización se informa pero no es regla del PRD.
 - **S-14** El servidor no usa como fuente el paquete, los derivados ni el payload que envía el modelo.
@@ -248,9 +249,45 @@ Detalle completo, alternativa descartada e impacto en `specs/supuestos.md`:
 | Prompt injection en correos, cotizaciones o facturas | Documentos tratados como datos; las reglas están en código; `oc_crear` revalida y rechaza payloads alterados; la confirmación no depende del modelo |
 | Duplicados por reintentos o concurrencia | Idempotencia por `solicitud_id` en SAP y registro en el middleware; consulta antes de cada reintento |
 | Estado en serverless (`/tmp` por instancia) | Hoy: estado firmado por sesión. Producción: base de datos para sesiones, órdenes y un log de control único de toda la operación |
-| Consumo indebido de la clave del modelo | Basic Auth, límites por IP y por hora, tope de iteraciones y de tokens por sesión, límite de gasto en el workspace de la API; en producción, SSO y límite distribuido |
+| Consumo indebido de la clave del modelo | Basic Auth, límites por IP y por hora, tope de iteraciones y de tokens por sesión, y límite de gasto configurado en la Console de Anthropic para la clave de la prueba (ver anexo); en producción, SSO y límite distribuido |
 | Precio con IVA incluido frente a precio neto de SAP | Confirmar con Contabilidad y calcular el neto desde el indicador antes del adaptador real (S-05) |
 | Validez de la evidencia ante auditoría | PDF con hash y, si se exige, firma digital o el `.eml` original como adjunto |
 | Datos personales en correos (Ley 1581 de 2012) | Minimizar los datos en los logs (hoy solo caso y resultado), definir retención y acceso |
 | Indisponibilidad o latencia del proveedor LLM | Timeout con mensaje claro, sesión que sobrevive, modelo alterno configurable; la validación funciona sin LLM (`demo.ts`) |
 | Falsos positivos del detector de confirmación | Detector conservador y botones explícitos en la UI; la entrada libre queda bloqueada mientras haya un pendiente |
+
+## Anexo. Seguridad y límites de uso (PRD §8)
+
+### Límites de uso del modelo
+
+Protegen la clave del modelo y acotan el costo. Los cuatro primeros se configuran por variable de entorno.
+
+| Límite | Valor | Qué ocurre al alcanzarlo |
+|---|---|---|
+| Iteraciones herramienta → modelo por turno (`AGENT_MAX_ITERACIONES`) | 12 | El agente responde con lo ejecutado y lo que falta |
+| Tokens por sesión, entrada más salida, incluida la caché (`AGENT_MAX_TOKENS_SESION`) | 1.000.000, unos 12 casos | El chat avisa y pide iniciar otra con "Nueva sesión" |
+| Tokens de salida por llamada (`AGENT_MAX_TOKENS_SALIDA`) | 1.500 | La respuesta se acota |
+| Tiempo por llamada al modelo (`LLM_TIMEOUT_MS`) | 25 s | Aviso claro en el chat; la sesión sigue activa |
+| Tiempo por turno | 30 s de presupuesto, dentro de los 60 s de la función | Igual que el tope de iteraciones |
+| Mensajes por minuto por IP | 10 | HTTP 429: "Demasiadas solicitudes. Intente en un minuto." |
+| Mensajes por hora por instancia | 120 | HTTP 429: "Capacidad horaria agotada. Intente más tarde." |
+| Tamaño del mensaje | 2.000 caracteres | HTTP 400 |
+| Gasto de la clave | Límite configurado en la Console de Anthropic para la clave de la prueba | El proveedor rechaza nuevas llamadas y el chat lo informa sin caerse |
+
+Medición en producción (2026-11-10): una sesión con sol-001, sol-004, sol-001 repetida y sol-005 (6 turnos, 19 llamadas al modelo) consumió 263.763 tokens. Con el tope inicial de 300.000, una pasada por los 6 casos se cortaba hacia el sexto; por eso se subió a 1.000.000 (gasto máximo aproximado por sesión: USD 2).
+
+### Precauciones de seguridad
+
+| Riesgo | Control implementado |
+|---|---|
+| Exposición de la clave del modelo | Solo existe como variable de entorno del servidor. No llega al front, al repositorio, a los logs ni a las respuestas de la API; `/api/health` solo indica si está configurada |
+| Uso no autorizado de la URL | Autenticación básica en la interfaz y en la API, salvo `/api/health` (`proxy.ts` y `src/lib/acceso.ts`, con comparación en tiempo constante). Las credenciales no quedan escritas en el repositorio: se entregan por un enlace externo que caduca |
+| Instrucciones maliciosas en correos, cotizaciones o facturas | Los documentos se tratan como datos. Las reglas RC1-RC10 son código, no prompt. `oc_crear` revalida el caso en el servidor y rechaza un payload distinto del validado |
+| OC creada sin consentimiento | La confirmación se verifica en el servidor: el modelo no puede confirmarse a sí mismo. El estado de la sesión viaja firmado con HMAC-SHA256 y un estado alterado se descarta |
+| Acceso a archivos fuera del caso | Identificadores de caso con patrón estricto; las herramientas solo leen `fixtures/` y solo escriben en la carpeta de salida. No ejecutan comandos de shell |
+| Entradas inválidas | Argumentos de herramientas y cuerpo de la API validados con zod; las herramientas nunca lanzan y devuelven `{ ok: false, error }` |
+| Fuga de información en errores | Mensajes genéricos al cliente; el detalle queda solo en los logs del servidor. En operación normal esos logs registran sesión, paso y conteo de tokens, no el contenido de los documentos |
+| Navegador | Cabeceras `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy` y `Permissions-Policy`; página excluida de buscadores |
+| Datos y dependencias | Fixtures ficticios, sin datos personales reales; `npm audit` sin vulnerabilidades conocidas en la fecha de entrega |
+
+Limitaciones conocidas: los límites por IP y por hora viven en la memoria de cada instancia, así que en serverless son aproximados; la autenticación básica no tiene cierre de sesión. En producción corresponden un límite distribuido y autenticación real con SSO (sección 12).
