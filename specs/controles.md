@@ -90,9 +90,9 @@ Regla de integridad: el servidor **relee y revalida** el caso en `oc_validar`, `
 
 | Caso | Resultado esperado | Bloqueos | Confirmaciones | Derivados | Retroactiva | Crea OC | Justificación (PRD §) |
 |------|--------------------|----------|----------------|-----------|-------------|---------|------------------------|
-| sol-001 | OC creada sin intervención | — | — | — | false | Sí | O1; todos los controles cumplen |
-| sol-002 | Bloqueada | RC1 | — | — | false | No | O2; NIT 901999000 no existe en proveedores |
-| sol-003 | Bloqueada | RC2 | — | — | false | No | O2; fvargas no es aprobador de CC-2020 (solo rtorres, tope 30 M < 74 M) |
-| sol-004 | OC con confirmación | — | RC5 | — | false | Sí, tras confirmar | O3; cotización 26,5 M vs solicitud 25 M = 6 % > 2 % |
-| sol-005 | OC con confirmación, retroactiva | — | RC8 | — | true | Sí, tras confirmar | O4; factura 2026-08-10 < solicitud 2026-08-27 |
-| sol-006 | OC con confirmación | — | RC6 | indicador_iva C1, condiciones_pago Z030 | false | Sí, tras confirmar | O3; IVA y condiciones no informados, se derivan del proveedor |
+| sol-001 | OC creada sin intervención | ninguno | ninguno | ninguno | false | Sí | O1; todos los controles cumplen |
+| sol-002 | Bloqueada | RC1 | ninguno | ninguno | false | No | O2; NIT 901999000 no existe en proveedores |
+| sol-003 | Bloqueada | RC2 | ninguno | ninguno | false | No | O2; fvargas no es aprobador de CC-2020 (solo rtorres, tope 30 M < 74 M) |
+| sol-004 | OC con confirmación | ninguno | RC5 | ninguno | false | Sí, tras confirmar | O3; cotización 26,5 M vs solicitud 25 M = 6 % > 2 % |
+| sol-005 | OC con confirmación, retroactiva | ninguno | RC8 | ninguno | true | Sí, tras confirmar | O4; factura 2026-08-10 < solicitud 2026-08-27 |
+| sol-006 | OC con confirmación | ninguno | RC6 | indicador_iva C1, condiciones_pago Z030 | false | Sí, tras confirmar | O3; IVA y condiciones no informados, se derivan del proveedor |
