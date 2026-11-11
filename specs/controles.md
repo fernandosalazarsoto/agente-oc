@@ -108,3 +108,13 @@ Regla de integridad: el servidor **relee y revalida** el caso en `oc_validar`, `
 - `modulo/skill/ordenes-compra/SKILL.md`: frontmatter `name`, `description`; el cuerpo es exactamente `src/knowledge/ordenes-compra.md`.
 - `modulo/tools/oc.ts`: exporta las mismas herramientas que usa la aplicación (mismos objetos, no una copia), importables sin el servidor.
 - Un test falla si alguna pieza diverge de la fuente que usa la aplicación.
+
+## Continuidad de la sesión en serverless (PRD §6.1 "sesiones en memoria o archivo", CA3, HU-5)
+
+Hallazgo de la prueba en producción (2026-11-10 20:39): dos turnos de la misma sesión cayeron en instancias distintas de Vercel; la segunda instancia no tenía historial y su SAP simulado volvió a numerar desde 4500000001.
+
+- **Dado** un turno atendido por la instancia A, **cuando** el siguiente turno de la misma sesión llega a una instancia B sin memoria ni archivos, **entonces** B continúa la conversación con el mismo historial, la misma confirmación pendiente y el mismo SAP simulado de la sesión.
+- El estado viaja entre navegador y servidor como `estado` (JSON en base64url + HMAC-SHA256 con `SESSION_SECRET` o, si no existe, `TOOL_APPROVAL_SECRET`). Incluye la sesión y los archivos de la sesión: `sap/ordenes.jsonl`, `control.csv`, `log.jsonl`.
+- **Dado** un `estado` alterado o firmado con otra clave, **entonces** se ignora: no se puede forjar una confirmación pendiente ni órdenes.
+- En el chat, cada sesión tiene su SAP simulado en `out/sesiones/<id>/` (numeración desde 4500000001 e idempotencia por sesión). `demo.ts` sigue usando `out/` directamente.
+- Numeración continua: sol-001 en A → 4500000001; sol-004 confirmada en B → 4500000002; sol-001 repetida en C → 4500000001 idempotente.
