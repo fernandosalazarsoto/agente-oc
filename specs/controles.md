@@ -96,3 +96,15 @@ Regla de integridad: el servidor **relee y revalida** el caso en `oc_validar`, `
 | sol-004 | OC con confirmación | ninguno | RC5 | ninguno | false | Sí, tras confirmar | O3; cotización 26,5 M vs solicitud 25 M = 6 % > 2 % |
 | sol-005 | OC con confirmación, retroactiva | ninguno | RC8 | ninguno | true | Sí, tras confirmar | O4; factura 2026-08-10 < solicitud 2026-08-27 |
 | sol-006 | OC con confirmación | ninguno | RC6 | indicador_iva C1, condiciones_pago Z030 | false | Sí, tras confirmar | O3; IVA y condiciones no informados, se derivan del proveedor |
+
+## Extras del PRD (P1 y bonus)
+
+### HU-4 P1 · Evidencia en PDF
+- **Dado** un caso con aprobación, **cuando** se ejecuta `oc_generar_evidencia`, **entonces** además de `out/<caso>/aprobacion.txt` se genera `out/<caso>/aprobacion.pdf` con el mismo contenido y sha256, y la salida incluye `ruta_pdf`.
+- El PDF es reproducible: dos generaciones del mismo caso producen los mismos bytes (metadatos con la fecha del correo).
+
+### PRD §9.4 · Módulo reutilizable (`modulo/`)
+- `modulo/agent.md`: frontmatter `description`, `mode: primary`, `permission { edit: deny, bash: deny }`; el cuerpo es exactamente `agent/prompt.md`.
+- `modulo/skill/ordenes-compra/SKILL.md`: frontmatter `name`, `description`; el cuerpo es exactamente `src/knowledge/ordenes-compra.md`.
+- `modulo/tools/oc.ts`: exporta las mismas herramientas que usa la aplicación (mismos objetos, no una copia), importables sin el servidor.
+- Un test falla si alguna pieza diverge de la fuente que usa la aplicación.
