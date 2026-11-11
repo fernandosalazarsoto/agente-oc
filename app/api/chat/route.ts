@@ -53,6 +53,7 @@ export async function POST(req: Request) {
     const llm = new AdaptadorAnthropic(config.ANTHROPIC_API_KEY!, config.AGENT_MODEL, {
       maxTokensSalida: config.AGENT_MAX_TOKENS_SALIDA,
       timeoutMs: config.LLM_TIMEOUT_MS,
+      ...(config.ANTHROPIC_BASE_URL ? { url: `${config.ANTHROPIC_BASE_URL.replace(/\/$/, '')}/v1/messages` } : {}),
     });
     const resultado = await ejecutarTurno({
       llm,

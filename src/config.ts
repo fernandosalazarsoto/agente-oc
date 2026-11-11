@@ -8,6 +8,8 @@ const entero = (porDefecto: number) => z.coerce.number().int().positive().defaul
 
 const esquemaConfig = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  // Opcional: gateway o proxy compatible con la Messages API (también usado en pruebas E2E locales).
+  ANTHROPIC_BASE_URL: z.url().optional(),
   // Sonnet por defecto: más robusto siguiendo el flujo de herramientas.
   AGENT_MODEL: z.string().min(1).default('claude-sonnet-5-5'),
   DATASET: z.string().min(1).default('reto-03'),

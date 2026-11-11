@@ -84,17 +84,21 @@ function MatrizControles({ resultado }: { resultado: string }) {
 
 function TarjetaHerramienta({ t }: { t: LlamadaVisible }) {
   let legible = t.resultado;
+  let pendiente = false;
   try {
-    legible = JSON.stringify(JSON.parse(t.resultado), null, 2);
+    const r = JSON.parse(t.resultado) as { requiere_confirmacion?: boolean };
+    pendiente = r.requiere_confirmacion === true;
+    legible = JSON.stringify(r, null, 2);
   } catch {
     /* se muestra tal cual */
   }
+  const estado = t.ok ? { clase: 'ok', texto: 'ok' } : pendiente ? { clase: 'warn', texto: 'requiere confirmación' } : { clase: 'bad', texto: 'error' };
   return (
     <div className="tool">
       <div className="tool-cabecera">
         <span className="tool-nombre">{t.nombre}</span>
         <code className="tool-args">{JSON.stringify(t.args)}</code>
-        <span className={`estado ${t.ok ? 'ok' : 'bad'}`}>{t.ok ? 'ok' : 'error'}</span>
+        <span className={`estado ${estado.clase}`}>{estado.texto}</span>
       </div>
       <div className="tool-resumen">{t.resumen}</div>
       {t.nombre === 'oc_validar' && t.ok && <MatrizControles resultado={t.resultado} />}
@@ -169,7 +173,11 @@ export default function Pagina() {
       .catch(() => undefined);
   }, []);
 
-  useEffect(() => fin.current?.scrollIntoView({ behavior: 'smooth' }), [mensajes, ocupado]);
+  // Cuerpo con llaves: scrollIntoView devuelve una promesa en Chrome reciente y React
+  // la trataría como función de limpieza del efecto ("i is not a function").
+  useEffect(() => {
+    fin.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [mensajes, ocupado]);
 
   async function enviar(mensaje: string) {
     const limpio = mensaje.trim();

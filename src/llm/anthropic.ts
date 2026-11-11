@@ -62,7 +62,6 @@ export class AdaptadorAnthropic implements AdaptadorLLM {
     const cuerpo = {
       model: this.modelo,
       max_tokens: this.opciones.maxTokensSalida,
-      temperature: 0,
       system: [{ type: 'text', text: sistema, cache_control: { type: 'ephemeral' } }],
       messages: aMensajesAnthropic(mensajes),
       tools: herramientas.map((h, i) => ({
