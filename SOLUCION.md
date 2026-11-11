@@ -4,6 +4,7 @@
 - **Repositorio:** https://github.com/fernandosalazarsoto/agente-oc
 - **Verificación sin LLM:** `npm run demo` → 6/6 casos conformes con `specs/esperados/reto-03.json`
 - **Verificado en producción con el modelo real (2026-11-10, 20:48):** sol-001 → OC 4500000001 · demo del PRD con sol-004 → tabla, RC5 con ambos valores, tarjeta de confirmación → tras "Confirmo", OC 4500000002 · sol-001 repetida → mismo número (idempotente) · sol-005 → confirmación RC8 → OC 4500000003 marcada retroactiva · sol-002 → bloqueada por RC1 con acción sugerida. Sin errores en los logs de Vercel.
+- **Pasada completa en una sola sesión (2026-11-10, 21:32):** los 6 casos en orden, con sus confirmaciones → OC 4500000001 (sol-001), 4500000002 (sol-004), 4500000003 (sol-005, retroactiva) y 4500000004 (sol-006); sol-002 bloqueada por RC1 y sol-003 por RC2. Mismo resultado y misma numeración que `demo.ts`. Consumo de la sesión: 395.458 tokens.
 - **Pruebas:** `npm test` → 114 pruebas en verde · `npm run verify` (typecheck + tests + demo) · build sin warnings · CI en GitHub Actions
 
 ---
@@ -274,7 +275,7 @@ Protegen la clave del modelo y acotan el costo. Los cuatro primeros se configura
 | Tamaño del mensaje | 2.000 caracteres | HTTP 400 |
 | Gasto de la clave | Límite configurado en la Console de Anthropic para la clave de la prueba | El proveedor rechaza nuevas llamadas y el chat lo informa sin caerse |
 
-Medición en producción (2026-11-10): una sesión con sol-001, sol-004, sol-001 repetida y sol-005 (6 turnos, 19 llamadas al modelo) consumió 263.763 tokens. Con el tope inicial de 300.000, una pasada por los 6 casos se cortaba hacia el sexto; por eso se subió a 1.000.000 (gasto máximo aproximado por sesión: USD 2).
+Medición en producción (2026-11-10): una sesión con sol-001, sol-004, sol-001 repetida y sol-005 (6 turnos, 19 llamadas al modelo) consumió 263.763 tokens. Con el tope inicial de 300.000, una pasada por los 6 casos se cortaba hacia el sexto; por eso se subió a 1.000.000 (gasto máximo aproximado por sesión: USD 2). La pasada completa de los 6 casos, medida después del cambio, consumió 395.458 tokens.
 
 ### Precauciones de seguridad
 

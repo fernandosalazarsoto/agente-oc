@@ -17,7 +17,7 @@ Cómo obtener las credenciales:
 3. Las credenciales aparecen difuminadas. Usa la opción de copiar el mensaje y pégalo en un bloc de notas para leerlas.
 4. Entra a la URL con ese usuario y esa contraseña. Ninguno de los dos tiene espacios al inicio ni al final.
 
-Cada apertura del enlace cuenta como una vista y el enlace caduca. Si ya no está disponible, las credenciales van también en el correo de entrega.
+El enlace admite un número limitado de aperturas y tiene fecha de caducidad. Si ya no está disponible, las credenciales van también en el correo de entrega.
 
 Límites de uso (protegen la clave del modelo; detalle en el anexo de [SOLUCION.md](SOLUCION.md)):
 
