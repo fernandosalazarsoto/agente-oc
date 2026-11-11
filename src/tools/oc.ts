@@ -16,7 +16,7 @@ import { ErrorPaquete, normalizarPaquete, type Maestros, type Paquete } from '..
 import { validarPaquete, type Validacion } from '../domain/reglas';
 import { SapMock } from '../sap/mock';
 import type { SapAdapter } from '../sap/adapter';
-import { ahoraBogota, anexarLinea, directorioSalida, escribirArchivo, escribirBinario, registrarControl } from '../lib/salidas';
+import { ahoraBogota, anexarLinea, escribirArchivo, escribirBinario, registrarControl, rutaVisible, salidaDe } from '../lib/salidas';
 import { generarEvidenciaPdf } from '../lib/evidencia-pdf';
 
 export interface ContextoHerramienta {
@@ -25,6 +25,8 @@ export interface ContextoHerramienta {
   sessionId: string;
   /** Quién confirma las excepciones (lo fija el servidor tras la confirmación de la usuaria). */
   confirmadoPor?: string;
+  /** Carpeta de salida de la sesión del chat (out/sesiones/<id>/). Sin ella se usa out/ global (demo.ts). */
+  outDir?: string;
 }
 
 /** Error esperado con mensaje legible y campos adicionales para el modelo. */
@@ -79,7 +81,7 @@ function definir<F extends Forma, R>(
       }
       // CA4: toda llamada queda en out/log.jsonl (sin contenido sensible: args resumidos)
       try {
-        await anexarLinea(directorioSalida(ctx.directory), 'log.jsonl', JSON.stringify({
+        await anexarLinea(salidaDe(ctx), 'log.jsonl', JSON.stringify({
           ts: ahoraBogota(),
           sessionId: ctx.sessionId,
           herramienta: nombreParaModelo(nombre),
@@ -136,19 +138,19 @@ function ordenDe(e: CasoEvaluado): { orden: OrdenCompra; trazabilidad: Record<st
 async function escribirEvidencia(e: CasoEvaluado, ctx: ContextoHerramienta) {
   if (!e.paquete.aprobacion) throw new ErrorPaquete('Falta aprobacion.json: pida al líder el correo de aprobación');
   const ev = generarEvidencia(e.paquete.aprobacion);
-  const dirOut = directorioSalida(ctx.directory);
+  const dirOut = salidaDe(ctx);
   const relativa = `${e.paquete.caso}/aprobacion.txt`;
   const relativaPdf = `${e.paquete.caso}/aprobacion.pdf`;
   await escribirArchivo(dirOut, relativa, ev.texto);
   // P1: el mismo contenido y sha256 en PDF (adjunto para la OC)
   await escribirBinario(dirOut, relativaPdf, await generarEvidenciaPdf(ev.texto, e.paquete.aprobacion.fecha));
-  return { ruta: `out/${relativa}`, sha256: ev.sha256, ruta_pdf: `out/${relativaPdf}` };
+  return { ruta: rutaVisible(ctx, relativa), sha256: ev.sha256, ruta_pdf: rutaVisible(ctx, relativaPdf) };
 }
 
 const codigos = (xs: Array<{ codigo: string }>) => xs.map((x) => x.codigo);
 
 function sap(ctx: ContextoHerramienta): SapAdapter {
-  return new SapMock(path.join(directorioSalida(ctx.directory), 'sap'), directorioDataset(ctx.directory, dataset()));
+  return new SapMock(path.join(salidaDe(ctx), 'sap'), directorioDataset(ctx.directory, dataset()));
 }
 
 // ---------- Herramientas ----------
@@ -184,7 +186,7 @@ export const validar = definir(
     const v = e.validacion;
     // Un caso bloqueado no llega a oc_crear: se registra aquí el intento en el log de control.
     if (!v.apta && e.paquete.solicitud) {
-      await registrarControl(directorioSalida(ctx.directory), {
+      await registrarControl(salidaDe(ctx), {
         solicitud_id: e.paquete.solicitud.solicitud_id, resultado: 'BLOQUEADA', numero_oc: null,
         retroactiva: v.retroactiva, bloqueos: codigos(v.bloqueos), confirmaciones: codigos(v.confirmaciones),
       });
@@ -209,11 +211,11 @@ export const construir_payload = definir(
   async (a, ctx) => {
     const { orden, trazabilidad } = ordenDe(await evaluar(a.caso, ctx));
     const relativa = `${a.caso}/trazabilidad.json`;
-    await escribirArchivo(directorioSalida(ctx.directory), relativa, JSON.stringify(trazabilidad, null, 2));
+    await escribirArchivo(salidaDe(ctx), relativa, JSON.stringify(trazabilidad, null, 2));
     const p = orden.posiciones[0]!;
     return {
       payload: orden,
-      ruta_trazabilidad: `out/${relativa}`,
+      ruta_trazabilidad: rutaVisible(ctx, relativa),
       resumen: { proveedor: orden.proveedor.nombre, nit: orden.proveedor.nit, total: p.cantidad * p.precio_unitario, moneda: orden.moneda },
     };
   },
@@ -241,7 +243,7 @@ export const crear = definir(
     const e = await evaluar(a.caso, ctx);
     const v = e.validacion;
     const s = e.paquete.solicitud!;
-    const dirOut = directorioSalida(ctx.directory);
+    const dirOut = salidaDe(ctx);
     const fila = { solicitud_id: s.solicitud_id, retroactiva: v.retroactiva, bloqueos: codigos(v.bloqueos), confirmaciones: codigos(v.confirmaciones) };
     const adaptador = sap(ctx);
 

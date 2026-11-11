@@ -12,7 +12,7 @@ import { z } from 'zod';
 import type { AdaptadorLLM, DefinicionHerramienta, LlamadaHerramienta, MensajeLLM } from '../llm/adapter';
 import { ErrorLLM } from '../llm/adapter';
 import { type ContextoHerramienta, type NombreHerramienta, herramientasOC, nombreParaModelo } from '../tools/oc';
-import { ahoraBogota, anexarLinea, directorioSalida } from '../lib/salidas';
+import { ahoraBogota, anexarLinea, salidaDe } from '../lib/salidas';
 import { casosMencionados, esConfirmacion, esRechazo } from './confirmacion';
 
 export interface LlamadaVisible {
@@ -243,7 +243,7 @@ function resumirArgs(args: Record<string, unknown>): Record<string, unknown> {
 
 async function rechazar(llamada: LlamadaHerramienta, ctx: ContextoHerramienta, error: string): Promise<string> {
   try {
-    await anexarLinea(directorioSalida(ctx.directory), 'log.jsonl', JSON.stringify({
+    await anexarLinea(salidaDe(ctx), 'log.jsonl', JSON.stringify({
       ts: ahoraBogota(), sessionId: ctx.sessionId, herramienta: llamada.nombre, args: { caso: llamada.args.caso }, ok: false, error,
     }));
   } catch (e) {

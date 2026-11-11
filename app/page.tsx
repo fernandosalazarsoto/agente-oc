@@ -34,6 +34,7 @@ interface RespuestaChat {
   toolCalls: LlamadaVisible[];
   needsConfirmation: boolean;
   pendiente: Pendiente | null;
+  estado?: string;
   error?: string;
 }
 
@@ -41,6 +42,28 @@ const CASOS = ['sol-001', 'sol-002', 'sol-003', 'sol-004', 'sol-005', 'sol-006']
 const PROMPT_DEMO =
   'Procesa la solicitud "sol-004". Muéstrame la OC como quedaría en SAP, qué validaciones pasó y cuáles no, y no la crees hasta que yo lo confirme.';
 const CLAVE_SESION = 'agente-oc-sesion';
+const CLAVE_ESTADO = 'agente-oc-estado';
+
+function guardarLocal(clave: string, valor: string | null) {
+  try {
+    if (valor === null) sessionStorage.removeItem(clave);
+    else sessionStorage.setItem(clave, valor);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+}
+
+/** Lee (sin verificar: eso lo hace el servidor) el historial del estado firmado para restaurar la vista. */
+function leerEstado(token: string): { historial: Mensaje[]; pendiente: Pendiente | null } | null {
+  try {
+    const datos = (token.split('.')[0] ?? '').replace(/-/g, '+').replace(/_/g, '/');
+    const json = new TextDecoder().decode(Uint8Array.from(atob(datos), (c) => c.charCodeAt(0)));
+    const e = JSON.parse(json) as { sesion: { historial: Mensaje[]; pendiente: Pendiente | null } };
+    return { historial: e.sesion.historial, pendiente: e.sesion.pendiente };
+  } catch {
+    return null;
+  }
+}
 
 const formato = (n: number, moneda = 'COP') =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(n);
@@ -148,12 +171,15 @@ export default function Pagina() {
   const [texto, setTexto] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [estado, setEstado] = useState<string | null>(null);
   const fin = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let id = '';
+    let guardado: string | null = null;
     try {
       id = sessionStorage.getItem(CLAVE_SESION) ?? '';
+      guardado = sessionStorage.getItem(CLAVE_ESTADO);
     } catch {
       id = '';
     }
@@ -162,6 +188,13 @@ export default function Pagina() {
       return;
     }
     setSesion(id);
+    const restaurado = guardado ? leerEstado(guardado) : null;
+    if (guardado && restaurado) {
+      setEstado(guardado);
+      setMensajes(restaurado.historial.map((h) => ({ tipo: h.tipo, texto: h.texto, toolCalls: h.toolCalls })));
+      setPendiente(restaurado.pendiente);
+      return;
+    }
     fetch(`/api/sessions/${id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { historial: Mensaje[]; pendiente: Pendiente | null } | null) => {
@@ -190,10 +223,14 @@ export default function Pagina() {
       const r = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: sesion, message: limpio }),
+        body: JSON.stringify({ sessionId: sesion, message: limpio, ...(estado ? { estado } : {}) }),
       });
       const d = (await r.json()) as RespuestaChat;
       if (!r.ok) throw new Error(d.error ?? 'Error');
+      if (d.estado) {
+        setEstado(d.estado);
+        guardarLocal(CLAVE_ESTADO, d.estado);
+      }
       setMensajes((m) => [...m, { tipo: 'asistente', texto: d.reply, toolCalls: d.toolCalls }]);
       setPendiente(d.needsConfirmation ? d.pendiente : null);
     } catch (e) {
@@ -204,6 +241,8 @@ export default function Pagina() {
   }
 
   function reiniciar() {
+    setEstado(null);
+    guardarLocal(CLAVE_ESTADO, null);
     setSesion(nuevaSesion());
     setMensajes([]);
     setPendiente(null);

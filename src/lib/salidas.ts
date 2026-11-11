@@ -11,6 +11,16 @@ export function directorioSalida(raiz: string): string {
   return process.env.VERCEL ? '/tmp/out' : path.join(raiz, 'out');
 }
 
+/** Carpeta de salida de una ejecución: la de la sesión del chat (ctx.outDir) o out/ global. */
+export function salidaDe(ctx: { directory: string; outDir?: string }): string {
+  return ctx.outDir ?? directorioSalida(ctx.directory);
+}
+
+/** Ruta que se muestra al modelo y a la usuaria (relativa al proyecto, nunca absoluta). */
+export function rutaVisible(ctx: { outDir?: string; sessionId: string }, relativa: string): string {
+  return ctx.outDir ? `out/sesiones/${ctx.sessionId}/${relativa}` : `out/${relativa}`;
+}
+
 /** Fecha y hora en America/Bogota con offset explícito (UTC-5, sin horario de verano). */
 export function ahoraBogota(fecha: Date = new Date()): string {
   return `${new Date(fecha.getTime() - 5 * 3_600_000).toISOString().slice(0, 19)}-05:00`;
